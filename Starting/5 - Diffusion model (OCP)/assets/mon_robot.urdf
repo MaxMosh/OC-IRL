@@ -1,0 +1,114 @@
+<?xml version="1.0"?>
+<robot name="two_link_arm">
+
+  <!-- Origine -->
+  <link name="base">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.001"/>
+      <inertia ixx="1e-6" iyy="1e-6" izz="1e-6" ixy="0" ixz="0" iyz="0"/>
+    </inertial>
+  </link>
+
+  <!-- Premier axe (joint 1) -->
+  <joint name="joint1" type="revolute">
+    <parent link="base"/>
+    <child link="link1"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <!-- NOTE : pas sûr qu'il faille garder les limites -->
+    <limit lower="-3.14" upper="3.14" effort="10" velocity="2"/>
+  </joint>
+
+  <!-- Link 1 -->
+  <link name="link1">
+    <visual>
+      <geometry>
+        <cylinder radius="0.05" length="1.0"/>
+      </geometry>
+      <!-- Cylindre orienté sur X -->
+      <origin xyz="0.5 0 0" rpy="0 1.5708 0"/>
+      <material name="white">
+        <color rgba="1 1 1 1"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <cylinder radius="0.05" length="1.0"/>
+      </geometry>
+      <origin xyz="0.5 0 0" rpy="0 1.5708 0"/>
+    </collision>
+    <inertial>
+      <origin xyz="0.5 0 0" rpy="0 0 0"/>
+      <mass value="1.0"/>
+      <!-- Calcul de l'inertie : selon les deux axes perpendiculaires : 1.0 * ((0.05**2)/4 + (0.75**2)/12) = 0.0475 ; selon la longueur : 1.0 * (0.05)**2 / 2 = 0.00125  -->
+      <inertia ixx="0.00125" iyy="0.0475" izz="0.0475" ixy="0" ixz="0" iyz="0"/>
+    </inertial>
+  </link>
+
+  <!-- Deuxième axe (joint 2) -->
+  <joint name="joint2" type="revolute">
+    <parent link="link1"/>
+    <child link="link2"/>
+    <!-- placé à l'extrémité de link1 -->
+    <origin xyz="1.0 0 0" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <!-- NOTE : pas sûr qu'il faille garder les limites -->
+    <limit lower="-3.14" upper="3.14" effort="10" velocity="2"/>
+  </joint>
+
+  <!-- Link 2 -->
+  <link name="link2">
+    <visual>
+      <geometry>
+        <cylinder radius="0.05" length="1.0"/>
+      </geometry>
+      <origin xyz="0.5 0 0" rpy="0 1.5708 0"/>
+      <material name="white">
+        <color rgba="1 1 1 1"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <cylinder radius="0.05" length="1.0"/>
+      </geometry>
+      <!-- Cylindre orienté sur X -->
+      <origin xyz="0.5 0 0" rpy="0 1.5708 0"/>
+    </collision>
+    <inertial>
+      <origin xyz="0.5 0 0" rpy="0 0 0"/>
+      <mass value="1.0"/>
+      <!-- Calcul de l'inertie : selon les deux axes perpendiculaires : 1.0 * ((0.05**2)/4 + (0.75**2)/12) = 0.0475 ; selon la longueur : 1.0 * (0.05)**2 / 2 = 0.00125  -->
+      <inertia ixx="0.00125" iyy="0.0475" izz="0.0475" ixy="0" ixz="0" iyz="0"/>
+    </inertial>
+  </link>
+
+
+  <!-- AJOUT : end-effector -->
+  <!-- End-effector joint -->
+  <joint name="ee_joint" type="fixed">
+    <parent link="link2"/>
+    <child link="ee_link"/>
+    <!-- placé à l'extrémité de link2 -->
+    <origin xyz="1.0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- End-effector link -->
+  <link name="ee_link">
+    <!-- pas de masse, pas d'inertie -->
+    <inertial>
+      <mass value="0.0"/>
+      <inertia ixx="0.0" iyy="0.0" izz="0.0" ixy="0.0" ixz="0.0" iyz="0.0"/>
+    </inertial>
+    <visual>
+      <geometry>
+        <sphere radius="0.05"/>
+      </geometry>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <material name="green">
+        <color rgba="0 1 0 1"/>
+      </material>
+    </visual>
+  </link>
+
+</robot>

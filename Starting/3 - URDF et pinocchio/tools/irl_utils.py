@@ -1019,7 +1019,7 @@ def finite_difference_matrix(n, h):
     return D
 
 
-def generate_non_optimal_traj(q_opt,dq_opt,ddq_opt, param):
+def generate_non_optimal_traj(q_opt, dq_opt, ddq_opt, param):   #, dPx_opt, param):     # NOTE : test d'ajout de bruit sur dPx
     """_summary_
     Generate non optimal trajectories base on
         Kalakrishnan et al., base on STOMP: Stochastic Trajectory Optimization for Motion Planning, ICRA 2011.
@@ -1036,7 +1036,10 @@ def generate_non_optimal_traj(q_opt,dq_opt,ddq_opt, param):
     
     q_nopt=np.empty( (param["nb_samples"],param["nb_joints"],param["nb_nopt"]) )
     dq_nopt=np.empty( (param["nb_samples"],param["nb_joints"],param["nb_nopt"]) )
-    ddq_nopt=np.empty( (param["nb_samples"],param["nb_joints"],param["nb_nopt"]) )
+    # dPx_nopts=np.empty( (param["nb_samples"],1,param["nb_nopt"]) )        # NOTE : test d'ajout de bruit sur dPx
+    # NOTE : il reste à tester 
+    # print(dPx_nopts.shape)
+    # ddq_nopt=np.empty( (param["nb_samples"],param["nb_joints"],param["nb_nopt"]) )
 
 
     A=finite_difference_matrix(param["nb_samples"], 1)
@@ -1062,22 +1065,41 @@ def generate_non_optimal_traj(q_opt,dq_opt,ddq_opt, param):
 
     noise_std_small=param["noise_std"]/1
 
+    nb_discretization = q_nopt.shape[0]
+    h = 1/nb_discretization
+
     for i in range(param["nb_nopt"]):
     
         # if i>param["nb_nopt"]/2:
         #      param["noise_std"]=noise_std_small
-             
+        # q_nopt[:,0,i]=q_opt[:,0]+ 1*np.random.normal(0, 1*param["noise_std"], param["nb_samples"]) @ L.T # arbirtray choose parameters for noise 
+        # q_nopt[:,1,i]=q_opt[:,1]+ 1*np.random.normal(0, 1*param["noise_std"], param["nb_samples"]) @ L.T # arbirtray choose parameters for noise 
+
+        # dq_nopt[:,0,i]=dq_opt[:,0]+ 1*np.random.normal(0, 1*(param["noise_std"]), param["nb_samples"]) @ L.T
+        # dq_nopt[:,1,i]=dq_opt[:,1]+ 1*np.random.normal(0, 1*(param["noise_std"]), param["nb_samples"]) @ L.T
+
+        
         for j in range(param["nb_joints"]):
-           
-            
             q_nopt[:,j,i]=q_opt[:,j]+ np.random.normal(0, 1*param["noise_std"], param["nb_samples"]) @ L.T # arbirtray choose parameters for noise 
+
+            # dq_nopt[0,0,i] = dq_opt[0,0]
+            # dq_nopt[-1,0,i] = dq_opt[-1,0]
+            # dq_nopt[0,1,i] = dq_opt[0,1]
+            # dq_nopt[-1,1,i] = dq_opt[-1,1]
+            # for k in range(nb_discretization):
+            #     if k > 0 and k < (nb_discretization-1):
+            #         dq_nopt[k,j,i]=(q_nopt[k+1,j,i] - q_nopt[k-1,j,i])/(2*h)
            # q_nopt[:,j,i]=low_pass_filter_data(q_nopt[:,j,i],param["dt"],10,1)
            # dq_nopt[:,j,i]=np.hstack([np.diff(q_nopt[:,j,i])/param["dt"],dq_opt[-1,j]])
            # ddq_nopt[:,j,i]=np.hstack([np.diff(dq_nopt[:,j,i])/param["dt"],ddq_opt[-1,j]])
             dq_nopt[:,j,i]=dq_opt[:,j]+ np.random.normal(0, 1*(param["noise_std"]), param["nb_samples"]) @ L.T
-            ddq_nopt[:,j,i]=ddq_opt[:,j]+ np.random.normal(0, 1*(param["noise_std"]), param["nb_samples"]) @ L.T
+        
+            # ddq_nopt[:,j,i]=ddq_opt[:,j]+ np.random.normal(0, 1*(param["noise_std"]), param["nb_samples"]) @ L.T      # RETRAIT
+        # print((np.random.normal(0, 1*(param["noise_std"]), param["nb_samples"]) @ L.T).shape)  
+        #dPx_nopts[:,0,i]= dPx_opt.reshape((1,100)) + 1.0*np.random.normal(0, 1*(param["noise_std"]), param["nb_samples"]) @ L.T
 
-    return q_nopt, dq_nopt, ddq_nopt
+    # print(dq_nopt.shape)
+    return q_nopt, dq_nopt #, dPx_nopts #, ddq_nopt # RETRAIT
 
 
 def calculate_gradient_states(func_name,func, qs,dqs,ddqs):

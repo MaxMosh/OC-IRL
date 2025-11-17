@@ -1,3 +1,7 @@
+# FOURTH VERSION OF DIFFUSION TRAINING SCRIPT
+# MODEL USED FOR LEARNING NOISE: RNN
+# DATA USED: BERRET'S RECORDING OF Q1 AND Q2 (ARM REACHING IN A 2D SPACE, FIXED FINAL ABSCISSE)
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -8,24 +12,30 @@ from datetime import datetime
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
-# ==================== CONFIG ====================
-TRAJECTORY_DIM = 2  # q1 and q2
-MAX_LENGTH = 200  # Maximum trajectory length (adjust based on your data)
-NOISE_STEPS = 100
+# PARAMETERS OF THE MODEL
+TRAJECTORY_DIM = 2                          # joints q1 and q2
+MAX_LENGTH = 200                            # maximum trajectory (longer trajectories or truncated to this lenght, shorter are zero-padded to this lenght)
+NOISE_STEPS = 1000                          # number of noise steps for the diffusion (seems to be the most common used number in the papers)
 BATCH_SIZE = 32
-NUM_EPOCHS = 1000
+NUM_EPOCHS = 10000                          # number of epochs in the training
 LR = 1e-4
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# ==================== DATA LOADING ====================
+# LOADING TBE DATA
 class TrajectoryDataset(torch.utils.data.Dataset):
     def __init__(self, data_paths, max_length=MAX_LENGTH):
         """
         Load trajectory data from multiple CSV files.
+        Configure trajectories and lenght attributes of the class (lenghts are all the same here).
+        IMPORTANT: our data is strangely arranged in two lines, the first is q1 and the second is q2. Thus, the data is transposed during the loading.
         
         Args:
-            data_paths: List of paths to CSV files
-            max_length: Maximum length for padding/truncation
+            data_paths: list of paths to CSV files
+            max_length: maximum length for padding or truncation
+        
+        Outputs:
+            trajectories (attribute): array of all padded or truncated trajectories
+            lenghts (attribute): array containing lenghts of all trajectories (useless here, as we define all sequences to have a lenght of 200)
         """
         self.trajectories = []
         self.lengths = []
@@ -33,11 +43,10 @@ class TrajectoryDataset(torch.utils.data.Dataset):
         
         for path in tqdm(data_paths, desc="Loading trajectories"):
             try:
-                # Load CSV without header, transpose to get (time_steps, 2)
-                df = pd.read_csv(path, header=None)
-                trajectory = df.T.values  # Shape: (time_steps, 2)
+                df = pd.read_csv(path, header=None)                                     # load CSV without header (IMPORTANT, otherwise we lose q1)
+                trajectory = df.T.values                                                # transposing the data
                 
-                original_length = len(trajectory)
+                original_length = len(trajectory)                                       # to define if sequence need to be truncated or padded
                 
                 # Pad or truncate
                 if original_length < max_length:
@@ -73,21 +82,21 @@ def load_all_trajectories(base_dir="data"):
     Load all trajectory files from S01 to S20 directories.
     
     Args:
-        base_dir: Base directory containing S01-S20 folders
+        base_dir: Base directory containing S01-S20 folders (here, all the subjects are find in the base directory "data")
         
     Returns:
-        List of file paths
+        List of CSV file paths (between 50 and 100 per subject)
     """
     file_paths = []
     
-    for i in range(1, 21):  # S01 to S20
-        subject_dir = os.path.join(base_dir, f"S{i:02d}")
+    for i in range(1, 21):                                                              # S01 to S20
+        subject_dir = os.path.join(base_dir, f"S{i:02d}")                               # SXX
         
         if not os.path.exists(subject_dir):
             print(f"Warning: {subject_dir} does not exist")
             continue
         
-        # Get all CSV files in the directory
+        # Listing all CSV file in the subdirectory SXX
         csv_files = [f for f in os.listdir(subject_dir) if f.endswith('.csv')]
         
         for csv_file in csv_files:
@@ -96,7 +105,7 @@ def load_all_trajectories(base_dir="data"):
     print(f"Found {len(file_paths)} trajectory files")
     return file_paths
 
-# ==================== RNN MODEL ====================
+# DEFINING THE RNN MODEL
 class RNNBlock(nn.Module):
     """
     RNN block with residual connection and time embedding.
@@ -195,12 +204,15 @@ class DiffusionRNN(nn.Module):
         
         return output
 
-# ==================== DIFFUSION PROCESS ====================
+# DEFINING THE DIFFUSION MODEL
+# NOTE: there are other ways to perform the steps of denoising, here the implementation is the DDPM one.
 class Diffusion:
     def __init__(self, noise_steps=NOISE_STEPS, beta_start=0.0001, beta_end=0.02, 
                  max_length=MAX_LENGTH, device='cuda'):
         """
         Initialize the Diffusion process.
+        NOTE: I might use a noise scheduler from packages like diffusers, might be a safer way to get the good alphahat values (here I checked by plotting)
+        NOTE: Here linspace is used, but cosine might be more progressive.
         """
         self.noise_steps = noise_steps
         self.beta_start = beta_start
@@ -266,17 +278,21 @@ class Diffusion:
             for i in reversed(range(1, start_t + 1)):
                 t = torch.full((x.shape[0],), i, device=self.device, dtype=torch.long)
                 
-                # Predict noise
+                # Predict noise with the model
                 predicted_noise = model(x, t)
                 
-                # Denoise
+                # Denoise step (from noisy step t to less noisy step t-1)
                 sqrt_alpha = torch.sqrt(self.alpha[i])
                 one_minus_alpha = 1.0 - self.alpha[i]
                 sqrt_one_minus_alpha_hat = torch.sqrt(1.0 - self.alpha_hat[i])
                 
+                # Romove the noise
+                # NOTE: we can find the equation of denoising for noisy state t to less noisy state t-1 in many papers
                 x = (1 / sqrt_alpha) * (x - one_minus_alpha * predicted_noise / sqrt_one_minus_alpha_hat)
                 
                 # Add noise (except for last step)
+                # NOTE: the equivalent in the paper I have seen is the addition with \sigma_t z. Here \sigma_t is beta[i].
+                # This operation add stochasticity to the result
                 if i > 1:
                     noise = torch.randn_like(x, device=self.device)
                     x = x + torch.sqrt(self.beta[i]) * noise
@@ -287,7 +303,7 @@ class Diffusion:
         
         return denoised_samples
 
-# ==================== TRAINING ====================
+# TRAINING THE MODEL
 def train(model, diffusion, dataloader, device=DEVICE, epochs=NUM_EPOCHS, learning_rate=LR):
     """
     Train the diffusion model.
@@ -307,12 +323,13 @@ def train(model, diffusion, dataloader, device=DEVICE, epochs=NUM_EPOCHS, learni
             trajectories = trajectories.to(device)
             
             # Generate random diffusion steps for each trajectory in batch
+            # This makes the model able to denoise sequences for different noise strenght
             t = torch.randint(0, diffusion.noise_steps, (trajectories.shape[0],), device=device)
             
-            # Perform forward diffusion
+            # Perform forward diffusion on the current trajectories
+            # NOTE: noise is kept to compute the loss
             noised_trajectories, true_noise = diffusion.forward_diffusion(trajectories, t)
             
-            # Zero gradients
             optimizer.zero_grad()
             
             # Forward pass through model to predict noise
@@ -321,7 +338,6 @@ def train(model, diffusion, dataloader, device=DEVICE, epochs=NUM_EPOCHS, learni
             # Calculate loss
             loss = criterion(predicted_noise, true_noise)
             
-            # Backward pass and optimize
             loss.backward()
             optimizer.step()
             
@@ -332,7 +348,7 @@ def train(model, diffusion, dataloader, device=DEVICE, epochs=NUM_EPOCHS, learni
     return model, result_loss
 
 
-# ==================== TESTING NOISE/DENOISE ====================
+# TESTING NOISE AND DENOISE
 def test_noise_denoise(model, diffusion, dataloader, device=DEVICE):
     """
     Test the noise and denoise process on a real trajectory from the dataset.
@@ -413,7 +429,7 @@ def test_noise_denoise(model, diffusion, dataloader, device=DEVICE):
 
 
 
-# ==================== GENERATION ====================
+# GENERATE TRAJECTORIES FROM PURE GAUSSIAN NOISE N(0,1)
 def generate_trajectories(model, diffusion, num_trajectories=10, num_steps_to_return=5):
     """
     Generate new trajectories using the trained model.
@@ -437,7 +453,7 @@ def generate_trajectories(model, diffusion, num_trajectories=10, num_steps_to_re
     
     return generated_trajectories, all_steps
 
-# ==================== VISUALIZATION ====================
+# VISUALIZATION OF GENERATED TRAJECTORIES
 def plot_trajectories(trajectories, title="Generated Trajectories", max_plots=6):
     """
     Plot multiple trajectories.
@@ -463,6 +479,7 @@ def plot_trajectories(trajectories, title="Generated Trajectories", max_plots=6)
 def plot_loss(losses):
     """
     Plot training loss.
+    NOTE: ways to validate/evaluate the model seem different for diffusion models.
     """
     plt.figure(figsize=(10, 5))
     plt.plot(losses)
@@ -472,12 +489,12 @@ def plot_loss(losses):
     plt.grid(True)
     plt.show()
 
-# ==================== MAIN ====================
+# MAIN
 def main():
     print(f"Using device: {DEVICE}")
     
     # Load data
-    print("\n=== Loading Data ===")
+    print("\nLoading Data...")
     file_paths = load_all_trajectories("data")
     dataset = TrajectoryDataset(file_paths, max_length=MAX_LENGTH)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
@@ -486,7 +503,7 @@ def main():
     print(f"Trajectory shape: ({MAX_LENGTH}, {TRAJECTORY_DIM})")
     
     # Initialize model and diffusion
-    print("\n=== Initializing Model ===")
+    print("\nInitializing Model...")
     model = DiffusionRNN(
         trajectory_dim=TRAJECTORY_DIM,
         max_length=MAX_LENGTH,
@@ -500,13 +517,23 @@ def main():
         max_length=MAX_LENGTH,
         device=DEVICE
     )
+
+    # Plot of beta and alphahat: alphahat start from 1 and goes to 0
+    # plt.plot(diffusion.beta.cpu())
+    # plt.title("Values of beta")
+    # plt.savefig("beta_values.jpg")
+    # plt.show()
+    # plt.plot(diffusion.alpha_hat.cpu())
+    # plt.title("Values of alphahat")
+    # plt.savefig("alphahat_values.jpg")
+    # plt.show()
     
     # Count parameters
     num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Number of trainable parameters: {num_params:,}")
     
     # Train model
-    print("\n=== Training ===")
+    print("\nTraining...")
     trained_model, losses = train(model, diffusion, dataloader, 
                                   device=DEVICE, epochs=NUM_EPOCHS, learning_rate=LR)
     
@@ -514,7 +541,7 @@ def main():
     plot_loss(losses)
     
     # Save model
-    print("\n=== Saving Model ===")
+    print("\nSaving Model...")
     os.makedirs("trained_models", exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     model_path = f"trained_models/diffusion_mlp_{timestamp}.pth"
@@ -533,7 +560,7 @@ def main():
     print(f"Model saved to: {model_path}")
     
     # Generate samples
-    print("\n=== Generating Samples ===")
+    print("\nGenerating Samples...")
     generated_trajectories, all_steps = generate_trajectories(
         trained_model, diffusion, num_trajectories=6, num_steps_to_return=5
     )
@@ -542,7 +569,7 @@ def main():
     plot_trajectories(generated_trajectories, title="Generated Trajectories")
     
     # Generate samples
-    print("\n=== Generating Samples ===")
+    print("\nGenerating Samples...")
     generated_trajectories, all_steps = generate_trajectories(
         trained_model, diffusion, num_trajectories=6, num_steps_to_return=5
     )
@@ -551,10 +578,10 @@ def main():
     plot_trajectories(generated_trajectories, title="Generated Trajectories")
     
     # TEST NOISE/DENOISE - ADD THESE LINES
-    print("\n=== Testing Noise/Denoise Process ===")
+    print("\nTesting Noise/Denoise Process...")
     test_noise_denoise(trained_model, diffusion, dataloader, device=DEVICE)
     
-    print("\n=== Complete ===")
+    print("\nComplete.")
 
 if __name__ == "__main__":
     main()

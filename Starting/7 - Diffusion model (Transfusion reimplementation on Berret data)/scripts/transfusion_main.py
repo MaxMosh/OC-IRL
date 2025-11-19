@@ -137,8 +137,8 @@ def main():
     # Define train and test subjects
     # Adjust these based on your data structure
     all_subjects = [f'S{i:02d}' for i in range(1, 16)]  # S01 to S15
-    train_subjects = all_subjects[:12]  # S01 to S12 for training
-    test_subjects = all_subjects[12:]   # S13 to S15 for testing
+    train_subjects = all_subjects[:14]  # S01 to S12 for training
+    test_subjects = all_subjects[14:]   # S13 to S15 for testing
     
     print(f"Train subjects: {train_subjects}")
     print(f"Test subjects: {test_subjects}")

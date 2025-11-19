@@ -120,7 +120,9 @@ class DCTTransform:
         Returns:
             Transformed tensor of shape (batch, L, features)
         """
-        return torch.matmul(dct_matrix.to(x.device), x)
+        # Ensure dct_matrix has the same dtype as x
+        dct_matrix = dct_matrix.to(x.device, dtype=x.dtype)
+        return torch.matmul(dct_matrix, x)
     
     @staticmethod
     def idct(y, dct_matrix):
@@ -134,7 +136,9 @@ class DCTTransform:
         Returns:
             Transformed tensor of shape (batch, seq_len, features)
         """
-        return torch.matmul(dct_matrix.T.to(y.device), y)
+        # Ensure dct_matrix has the same dtype as y
+        dct_matrix = dct_matrix.to(y.device, dtype=y.dtype)
+        return torch.matmul(dct_matrix.T, y)
 
 
 class SinusoidalPositionEmbedding(nn.Module):

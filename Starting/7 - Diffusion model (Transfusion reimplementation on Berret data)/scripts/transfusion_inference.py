@@ -52,7 +52,6 @@ class DDIMSampler:
         y_t = y_T
         for i, t in enumerate(tqdm(self.inference_timesteps, desc="Sampling")):
             t_batch = torch.full((batch_size * num_samples,), t, device=device).long()
-            print(y_t.shape)
             
             # Reshape for model
             y_t_flat = y_t.view(batch_size * num_samples, -1, self.model.input_dim)

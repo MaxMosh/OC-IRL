@@ -543,11 +543,25 @@ def main():
         
         all_test_results.append({
             'trial': trial_file,
-            'stats': trial_stats
+            'stats': trial_stats,
+            'subsequences': subsequences
         })
     
-    # Create summary plot
+    # ========== ADDITIONAL TESTS ==========
     if len(all_test_results) > 0:
+        # Test 1: Context Sensitivity Analysis
+        print("\n" + "="*60)
+        print("ADDITIONAL TEST 1: Context Sensitivity Analysis")
+        print("="*60)
+        test_context_sensitivity(model, diffusion, all_test_results, device=DEVICE)
+        
+        # Test 2: Context Interpolation
+        print("\n" + "="*60)
+        print("ADDITIONAL TEST 2: Context Interpolation")
+        print("="*60)
+        test_context_interpolation(model, diffusion, all_test_results, device=DEVICE)
+        
+        # Summary plots
         create_summary_plot(all_test_results)
     
     print("\n" + "="*50)
@@ -555,7 +569,11 @@ def main():
     print("="*50)
     print(f"Tested on {len(all_test_results)} trajectories")
     print(f"Each trajectory tested at {num_starting_points} starting points")
-    print("Results saved in: test_plots/")
+    print("\nTests performed:")
+    print("  1. Multi-start conditional generation (5 starting points per trial)")
+    print("  2. Context sensitivity analysis (comparing different contexts)")
+    print("  3. Context interpolation (smooth transitions between contexts)")
+    print("\nResults saved in: test_plots/")
 
 if __name__ == "__main__":
     main()

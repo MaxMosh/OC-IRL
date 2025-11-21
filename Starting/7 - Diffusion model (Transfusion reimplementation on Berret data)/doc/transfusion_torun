@@ -1,0 +1,15 @@
+python scripts/transfusion_main.py \
+    --data_dir data \
+    --obs_frames 25 \
+    --pred_frames 100 \
+    --batch_size 64 \
+    --epochs 2 \
+    --save_dir ./checkpoints
+    
+    
+    
+python scripts/transfusion_test_script.py \
+    --checkpoint ./checkpoints/transfusion_20251117.pt \
+    --csv_path data/S18/Trial00.csv \
+    --num_samples 50 \
+    --num_to_show 20

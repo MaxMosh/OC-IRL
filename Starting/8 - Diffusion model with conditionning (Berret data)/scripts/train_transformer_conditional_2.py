@@ -1,7 +1,8 @@
-# CONDITIONAL DIFFUSION TRAINING SCRIPT WITH TRANSFORMERS
-# MODEL: Transformer-based diffusion with conditioning on first 20 frames
-# DATA: Berret's recording of Q1 and Q2 (arm reaching in 2D space)
-# TASK: Generate 10 possible continuations for the next 80 frames
+# CONDITIONAL DIFFUSION TRAINING SCRIPT
+# MODEL USED FOR LEARNING NOISE: RNN, CONDITIONED TO A PREFIX
+# CONDITION ENCODING: TRANSFORMER ENCODER OVER THE 20 FRAMES PREFIX
+# DATA USED: BERRET'S RECORDING OF Q1 AND Q2 (ARM REACHING IN A 2D SPACE, FIXED FINAL ABSCISSE)
+# GENERATED DATA: NEXT 80 FRAMES OF THE MOVEMENT
 
 import torch
 import torch.nn as nn
@@ -14,18 +15,18 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 import math
 
-# ==================== CONFIG ====================
-TRAJECTORY_DIM = 2  # joints q1 and q2
-CONTEXT_LENGTH = 20  # number of conditioning frames
-PREDICTION_LENGTH = 80  # number of frames to predict
-MAX_LENGTH = CONTEXT_LENGTH + PREDICTION_LENGTH  # total length = 100
-NOISE_STEPS = 1000  # number of noise steps for diffusion
+# PARAMETERS
+TRAJECTORY_DIM = 2                                  # joints q1 and q2
+CONTEXT_LENGTH = 20                                 # number of conditioning frames
+PREDICTION_LENGTH = 80                              # number of frames to predict
+MAX_LENGTH = CONTEXT_LENGTH + PREDICTION_LENGTH     # total length = 100
+NOISE_STEPS = 1000                                  # number of noise steps for diffusion
 BATCH_SIZE = 32
-NUM_EPOCHS = 10000
-LR = 1e-4
+NUM_EPOCHS = 1000                                   # number of epochs (10000 seems to be too much)
+LR = 1e-4                                           # learning rate (tried 1e-5, not very relevant)
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# ==================== DATA LOADING WITH SUBSEQUENCE AUGMENTATION ====================
+# LOADING THE DATA WITH SUBSEQUENCE AUGMENTATION
 class ConditionalTrajectoryDataset(torch.utils.data.Dataset):
     def __init__(self, data_paths, context_length=CONTEXT_LENGTH, 
                  prediction_length=PREDICTION_LENGTH, use_subsequences=True,
@@ -40,11 +41,13 @@ class ConditionalTrajectoryDataset(torch.utils.data.Dataset):
             prediction_length: number of frames to predict (80)
             use_subsequences: if True, extract multiple subsequences from each trajectory
             subsequence_stride: stride for sliding window when extracting subsequences
+            TODO: A COMPARISON SHOULD BE PERFORMED BETWEEN OVERLAPPING AND NON-OVERLAPPING SUBSAMPLING
         
         Attributes:
             contexts: array of context trajectories (first 20 frames)
             predictions: array of prediction trajectories (next 80 frames)
             full_trajectories: array of complete trajectories (for visualization)
+            TODO: A TEST SHOULD BE PERFORMED ON A LONGER CONTEXT
         """
         self.contexts = []
         self.predictions = []
@@ -57,12 +60,16 @@ class ConditionalTrajectoryDataset(torch.utils.data.Dataset):
         
         for path in tqdm(data_paths, desc="Loading trajectories"):
             try:
-                df = pd.read_csv(path, header=None)
-                trajectory = df.T.values  # transpose to get (time_steps, 2)
+                # NOTE: Berret's data are suprisingly stored in two lines q1 and q2, we thus transpose the data
+                df = pd.read_csv(path, header=None)         # header=None, otherwise we lose q1
+                trajectory = df.T.values                    # transpose to get (time_steps, 2)
                 
                 if use_subsequences:
-                    # Extract multiple subsequences from each trajectory
-                    # This creates data augmentation by sliding window
+                    # Extract multiple subsequences from each trajectory (data augmentation)
+                    # NOTE: as the task asked to be performed during the experiment is very simple,
+                    # subsampling here allows us to predict the end of the trajectory not only from
+                    # the beginning of the arm reaching (taking only the beginning of the sequence would
+                    # be very poor in diversity)
                     for start_idx in range(0, len(trajectory) - self.total_length + 1, subsequence_stride):
                         end_idx = start_idx + self.total_length
                         
@@ -108,8 +115,10 @@ def load_trajectories_by_subjects(base_dir="data", subjects=None):
     Load trajectory files from specific subject directories.
     
     Args:
-        base_dir: Base directory containing S01-S20 folders
+        base_dir: Base directory containing S01-S21 folders
         subjects: List of subject numbers to load (e.g., [1, 2, 3] for S01, S02, S03)
+        NOTE: this function is called with subjects=range(1, 15) later, in order to 
+        keep some "tests" subjects
         
     Returns:
         List of CSV file paths
@@ -117,11 +126,12 @@ def load_trajectories_by_subjects(base_dir="data", subjects=None):
     file_paths = []
     
     if subjects is None:
-        subjects = range(1, 21)  # All subjects S01 to S20
+        subjects = range(1, 22)  # All subjects S01 to S21
     
     for i in subjects:
         subject_dir = os.path.join(base_dir, f"S{i:02d}")
         
+        # NOTE: S14 has is not available in the folder I pulled from git
         if not os.path.exists(subject_dir):
             print(f"Warning: {subject_dir} does not exist")
             continue
@@ -134,10 +144,12 @@ def load_trajectories_by_subjects(base_dir="data", subjects=None):
     print(f"Found {len(file_paths)} trajectory files for subjects {subjects}")
     return file_paths
 
-# ==================== TRANSFORMER MODEL WITH CONDITIONING ====================
+# TRANSFORMER MODEL WITH CONDITIONING
 class PositionalEncoding(nn.Module):
     """
     Sinusoidal positional encoding for sequence positions.
+    NOTE: normally, it should gives sense to the order of the data in the sequence,
+    compensating the non-ordered architecture
     """
     def __init__(self, d_model, max_len=5000):
         super().__init__()
@@ -334,7 +346,7 @@ class ConditionalDiffusionTransformer(nn.Module):
         
         return output
 
-# ==================== CONDITIONAL DIFFUSION PROCESS ====================
+# CONDITIONAL DIFFUSION PROCESS
 class ConditionalDiffusion:
     def __init__(self, noise_steps=NOISE_STEPS, beta_start=0.0001, beta_end=0.02, 
                  prediction_length=PREDICTION_LENGTH, device='cuda'):
@@ -434,7 +446,7 @@ class ConditionalDiffusion:
         
         return all_predictions
 
-# ==================== TRAINING ====================
+# TRAINING
 def train(model, diffusion, train_loader, val_loader, device=DEVICE, 
           epochs=NUM_EPOCHS, learning_rate=LR):
     """
@@ -500,7 +512,7 @@ def train(model, diffusion, train_loader, val_loader, device=DEVICE,
     
     return model, train_losses, val_losses
 
-# ==================== VISUALIZATION ====================
+# VISUALIZATION
 def plot_losses(train_losses, val_losses, save_path=None):
     """
     Plot training and validation losses.
@@ -591,7 +603,7 @@ def visualize_conditional_generation(model, diffusion, val_dataset, num_contexts
     plt.tight_layout()
     return fig
 
-# ==================== MAIN ====================
+# MAIN
 def main():
     print(f"Using device: {DEVICE}")
     print(f"Context length: {CONTEXT_LENGTH}, Prediction length: {PREDICTION_LENGTH}")
@@ -601,7 +613,7 @@ def main():
     print("Training with subsequence augmentation enabled (stride=10)")
     
     train_paths = load_trajectories_by_subjects("data", subjects=range(1, 15))  # S01-S14
-    val_paths = load_trajectories_by_subjects("data", subjects=[15])  # S15
+    val_paths = load_trajectories_by_subjects("data", subjects=[15])            # S15
     
     # Training dataset with subsequence augmentation
     train_dataset = ConditionalTrajectoryDataset(

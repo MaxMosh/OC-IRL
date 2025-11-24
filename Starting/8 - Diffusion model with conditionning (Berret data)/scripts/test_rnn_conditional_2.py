@@ -11,7 +11,7 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-# ==================== CONFIG ====================
+# PARAMETERS
 TRAJECTORY_DIM = 2
 CONTEXT_LENGTH = 20
 PREDICTION_LENGTH = 80
@@ -19,7 +19,7 @@ MAX_LENGTH = CONTEXT_LENGTH + PREDICTION_LENGTH  # 100
 NOISE_STEPS = 1000
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# ==================== MODEL ARCHITECTURE ====================
+# MODEL ARCHITECTURE
 class ConditionalRNNBlock(nn.Module):
     """
     RNN block with residual connection, time embedding, and context conditioning.
@@ -138,7 +138,7 @@ class ConditionalDiffusionRNN(nn.Module):
         
         return output
 
-# ==================== DIFFUSION PROCESS ====================
+# DIFFUSION PROCESS
 class ConditionalDiffusion:
     def __init__(self, noise_steps=NOISE_STEPS, beta_start=0.0001, beta_end=0.02, 
                  prediction_length=PREDICTION_LENGTH, device='cuda'):
@@ -217,7 +217,7 @@ class ConditionalDiffusion:
         
         return all_predictions
 
-# ==================== LOAD MODEL ====================
+# LOAD MODEL
 def load_trained_model(model_path, device=DEVICE):
     """
     Load trained conditional model from checkpoint.
@@ -260,7 +260,7 @@ def load_trained_model(model_path, device=DEVICE):
     
     return model, config, diffusion
 
-# ==================== LOAD TEST TRAJECTORY WITH MULTIPLE STARTING POINTS ====================
+# LOAD TEST TRAJECTORY WITH MULTIPLE STARTING POINTS
 def load_test_trajectory_multi_start(file_path, context_length=CONTEXT_LENGTH, 
                                       prediction_length=PREDICTION_LENGTH,
                                       num_starts=5):
@@ -313,7 +313,7 @@ def load_test_trajectory_multi_start(file_path, context_length=CONTEXT_LENGTH,
     
     return subsequences
 
-# ==================== TEST: CONDITIONAL GENERATION WITH MULTIPLE STARTS ====================
+# TEST: CONDITIONAL GENERATION WITH MULTIPLE STARTS
 def test_conditional_generation_multi_start(model, diffusion, subsequences, 
                                             num_samples=10, device=DEVICE, trial_name="Trial"):
     """
@@ -447,7 +447,7 @@ def test_conditional_generation_multi_start(model, diffusion, subsequences,
     
     return all_stats
 
-# ==================== CREATE SUMMARY COMPARISON PLOT ====================
+# CREATE SUMMARY COMPARISON PLOT
 def create_summary_plot(all_test_results):
     """
     Create a summary plot showing statistics across all trials and starting points.
@@ -507,7 +507,7 @@ def create_summary_plot(all_test_results):
     print(f"Summary statistics plot saved to: {save_path}")
     plt.show()
 
-# ==================== MAIN TEST FUNCTION ====================
+# MAIN TEST FUNCTION
 def main():
     """
     Main test function for conditional generation on S18 Trial00.csv
@@ -519,7 +519,7 @@ def main():
     print(f"Context length: {CONTEXT_LENGTH} frames")
     print(f"Prediction length: {PREDICTION_LENGTH} frames")
     
-    # ========== LOAD MODEL ==========
+    # LOAD MODEL
     model_path = "trained_models/conditional_diffusion_XXXXXXXX_XXXXXX.pth"  # UPDATE THIS!
     
     if not os.path.exists(model_path):
@@ -529,7 +529,7 @@ def main():
     
     model, config, diffusion = load_trained_model(model_path, device=DEVICE)
     
-    # ========== LOAD TEST TRAJECTORIES (S18 Trial00, Trial05, Trial10) ==========
+    # LOAD TEST TRAJECTORIES (S18 Trial00, Trial05, Trial10)
     test_files = ["Trial00.csv", "Trial05.csv", "Trial10.csv"]
     test_base_path = "data/S18"
     num_starting_points = 5  # Test at 5 different starting points per trial
@@ -556,7 +556,7 @@ def main():
             num_starts=num_starting_points
         )
         
-        # ========== TEST: CONDITIONAL GENERATION AT MULTIPLE STARTS ==========
+        # TEST: CONDITIONAL GENERATION AT MULTIPLE STARTS
         trial_stats = test_conditional_generation_multi_start(
             model, diffusion, subsequences,
             num_samples=10, device=DEVICE, 

@@ -12,6 +12,7 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import math
+import seaborn as sns
 
 # PARAMETERS
 TRAJECTORY_DIM = 2
@@ -44,6 +45,7 @@ class PositionalEncoding(nn.Module):
 class ConditionalTransformerBlock(nn.Module):
     """
     Transformer block with self-attention, time embedding, and context conditioning.
+    Modified to return attention weights for visualization.
     """
     def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1):
         super().__init__()
@@ -73,12 +75,12 @@ class ConditionalTransformerBlock(nn.Module):
         
         self.dropout = nn.Dropout(dropout)
         
-    def forward(self, x, t_emb, c_emb):
+    def forward(self, x, t_emb, c_emb, return_attention=False):
         t_emb = self.time_mlp(t_emb).unsqueeze(1)
         c_emb = self.context_mlp(c_emb).unsqueeze(1)
         x = x + t_emb + c_emb
         
-        attn_out, _ = self.self_attn(x, x, x)
+        attn_out, attn_weights = self.self_attn(x, x, x, average_attn_weights=False)
         x = x + self.dropout(attn_out)
         x = self.norm1(x)
         
@@ -86,6 +88,8 @@ class ConditionalTransformerBlock(nn.Module):
         x = x + ffn_out
         x = self.norm2(x)
         
+        if return_attention:
+            return x, attn_weights
         return x
 
 class ConditionalDiffusionTransformer(nn.Module):
@@ -103,6 +107,7 @@ class ConditionalDiffusionTransformer(nn.Module):
         self.prediction_length = prediction_length
         self.d_model = d_model
         self.time_dim = time_dim
+        self.nhead = nhead
         
         # Context encoder
         self.context_input_proj = nn.Linear(trajectory_dim, d_model)
@@ -154,7 +159,7 @@ class ConditionalDiffusionTransformer(nn.Module):
             
         return emb
     
-    def forward(self, x_noisy, context, t):
+    def forward(self, x_noisy, context, t, return_attention=False):
         batch_size = x_noisy.shape[0]
         
         # Encode context
@@ -172,11 +177,18 @@ class ConditionalDiffusionTransformer(nn.Module):
         h = self.input_proj(x_noisy)
         h = self.pos_encoding(h)
         
+        attention_weights = []
         for block in self.transformer_blocks:
-            h = block(h, t_emb, context_emb)
+            if return_attention:
+                h, attn = block(h, t_emb, context_emb, return_attention=True)
+                attention_weights.append(attn)
+            else:
+                h = block(h, t_emb, context_emb, return_attention=False)
         
         output = self.output_proj(h)
         
+        if return_attention:
+            return output, attention_weights
         return output
 
 # DIFFUSION PROCESS
@@ -221,7 +233,7 @@ class ConditionalDiffusion:
                 for i in iterator:
                     t = torch.full((batch_size,), i, device=self.device, dtype=torch.long)
                     
-                    predicted_noise = model(x_pred, context, t)
+                    predicted_noise = model(x_pred, context, t, return_attention=False)
                     
                     sqrt_alpha = torch.sqrt(self.alpha[i])
                     one_minus_alpha = 1.0 - self.alpha[i]
@@ -269,6 +281,92 @@ def load_trained_model(model_path, device=DEVICE):
     print(f"Configuration: {config}")
     
     return model, config, diffusion
+
+# LOAD TRAINING DATASET
+def load_train_dataset(base_dir="data", subjects=None, context_length=CONTEXT_LENGTH, 
+                       prediction_length=PREDICTION_LENGTH, max_trajectories=500):
+    """
+    Load trajectories from training dataset (S01-S14).
+    
+    Returns:
+        List of (context, prediction, full_trajectory) tuples
+    """
+    if subjects is None:
+        subjects = range(1, 15)  # S01 to S14 (training set)
+    
+    print(f"\nLoading training dataset from subjects {list(subjects)}...")
+    
+    file_paths = []
+    for i in subjects:
+        subject_dir = os.path.join(base_dir, f"S{i:02d}")
+        
+        if not os.path.exists(subject_dir):
+            continue
+        
+        csv_files = [f for f in os.listdir(subject_dir) if f.endswith('.csv')]
+        
+        for csv_file in csv_files:
+            file_paths.append(os.path.join(subject_dir, csv_file))
+    
+    # Limit number of trajectories
+    if max_trajectories is not None and len(file_paths) > max_trajectories:
+        file_paths = file_paths[:max_trajectories]
+    
+    train_data = []
+    total_length = context_length + prediction_length
+    
+    for path in tqdm(file_paths, desc="Loading training data"):
+        try:
+            df = pd.read_csv(path, header=None)
+            trajectory = df.T.values
+            
+            if len(trajectory) >= total_length:
+                context = trajectory[:context_length]
+                prediction = trajectory[context_length:total_length]
+                full_traj = trajectory[:total_length]
+                
+                train_data.append((context, prediction, full_traj))
+        except Exception as e:
+            print(f"Error loading {path}: {e}")
+    
+    print(f"Loaded {len(train_data)} trajectories from training set")
+    return train_data
+
+# COMPUTE NEAREST NEIGHBOR IN TRAINING SET
+def find_nearest_neighbor(generated_pred, context, train_data):
+    """
+    Find the nearest neighbor in the training set for a generated prediction.
+    Compare based on full trajectory (context + prediction).
+    
+    Args:
+        generated_pred: Generated prediction (80, 2)
+        context: Context used for generation (20, 2)
+        train_data: List of (context, prediction, full_trajectory) from training set
+        
+    Returns:
+        nearest_full_traj, nearest_context, nearest_pred, min_distance, idx
+    """
+    # Concatenate context and generated prediction
+    full_generated = np.vstack([context, generated_pred])
+    
+    min_distance = float('inf')
+    nearest_idx = -1
+    nearest_full_traj = None
+    nearest_context = None
+    nearest_pred = None
+    
+    for idx, (train_context, train_pred, train_full) in enumerate(train_data):
+        # Compare full trajectories
+        distance = np.mean((full_generated - train_full) ** 2)
+        
+        if distance < min_distance:
+            min_distance = distance
+            nearest_idx = idx
+            nearest_full_traj = train_full
+            nearest_context = train_context
+            nearest_pred = train_pred
+    
+    return nearest_full_traj, nearest_context, nearest_pred, min_distance, nearest_idx
 
 # LOAD TEST TRAJECTORY WITH MULTIPLE STARTING POINTS
 def load_test_trajectory_multi_start(file_path, context_length=CONTEXT_LENGTH, 
@@ -431,6 +529,225 @@ def test_conditional_generation_multi_start(model, diffusion, subsequences,
     
     return all_stats
 
+# TEST: NEAREST NEIGHBOR ANALYSIS
+def test_nearest_neighbors(model, diffusion, subsequences, train_data, 
+                           num_samples=6, device=DEVICE, trial_name="Trial"):
+    """
+    Generate predictions and find their nearest neighbors in the training set.
+    """
+    print("\n" + "="*60)
+    print(f"TEST: Nearest Neighbor Analysis - {trial_name}")
+    print("="*60)
+    print(f"Generating {num_samples} predictions and finding nearest neighbors...")
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # Take first context for this test
+    context, true_prediction, start_idx = subsequences[0]
+    context = context.to(device)
+    context_np = context.squeeze().cpu().numpy()
+    
+    # Generate predictions
+    predictions = diffusion.reverse_diffusion(model, context, verbose=True, num_samples=num_samples)
+    
+    # Find nearest neighbors
+    print("\nFinding nearest neighbors in training set...")
+    nearest_neighbors = []
+    distances = []
+    
+    for i, pred in enumerate(tqdm(predictions, desc="Finding NNs")):
+        pred_np = pred.squeeze().cpu().numpy()
+        nn_full, nn_context, nn_pred, dist, idx = find_nearest_neighbor(pred_np, context_np, train_data)
+        nearest_neighbors.append((nn_full, nn_context, nn_pred))
+        distances.append(dist)
+        print(f"  Prediction {i+1}: NN index {idx}, MSE distance: {dist:.6f}")
+    
+    # Plot results
+    fig, axes = plt.subplots(num_samples, 2, figsize=(14, 4*num_samples))
+    if num_samples == 1:
+        axes = axes.reshape(1, -1)
+    
+    for i in range(num_samples):
+        pred_np = predictions[i].squeeze().cpu().numpy()
+        nn_full, nn_context, nn_pred = nearest_neighbors[i]
+        
+        # Plot generated trajectory (context + prediction)
+        ax = axes[i, 0]
+        time_context = np.arange(CONTEXT_LENGTH)
+        time_pred = np.arange(CONTEXT_LENGTH, MAX_LENGTH)
+        
+        ax.plot(time_context, context_np[:, 0], 'o-', color='blue', linewidth=2, 
+               label='Context q1', markersize=3)
+        ax.plot(time_context, context_np[:, 1], 'o-', color='red', linewidth=2, 
+               label='Context q2', markersize=3)
+        ax.plot(time_pred, pred_np[:, 0], '-', color='cyan', linewidth=2, 
+               label='Generated q1')
+        ax.plot(time_pred, pred_np[:, 1], '-', color='orange', linewidth=2, 
+               label='Generated q2')
+        ax.axvline(x=CONTEXT_LENGTH, color='black', linestyle=':', linewidth=1.5)
+        ax.set_title(f'Generated Trajectory {i+1}', fontsize=12, fontweight='bold')
+        ax.set_xlabel('Time Step')
+        ax.set_ylabel('Joint Angle')
+        ax.legend(fontsize=8)
+        ax.grid(True, alpha=0.3)
+        
+        # Plot nearest neighbor from training set
+        ax = axes[i, 1]
+        ax.plot(time_context, nn_context[:, 0], 'o-', color='blue', linewidth=2, 
+               label='Context q1', markersize=3)
+        ax.plot(time_context, nn_context[:, 1], 'o-', color='red', linewidth=2, 
+               label='Context q2', markersize=3)
+        ax.plot(time_pred, nn_pred[:, 0], '-', color='cyan', linewidth=2, 
+               label='Prediction q1')
+        ax.plot(time_pred, nn_pred[:, 1], '-', color='orange', linewidth=2, 
+               label='Prediction q2')
+        ax.axvline(x=CONTEXT_LENGTH, color='black', linestyle=':', linewidth=1.5)
+        ax.set_title(f'Nearest Neighbor (MSE={distances[i]:.4f})', fontsize=12, fontweight='bold')
+        ax.set_xlabel('Time Step')
+        ax.legend(fontsize=8)
+        ax.grid(True, alpha=0.3)
+    
+    plt.suptitle(f'{trial_name} - Generated Trajectories vs Nearest Neighbors in Training Set', 
+                fontsize=14, fontweight='bold')
+    plt.tight_layout()
+    
+    # Save plot
+    save_path = f"test_plots/{trial_name}_nearest_neighbors_{timestamp}.png"
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    print(f"\nNearest neighbor plot saved to: {save_path}")
+    plt.show()
+    
+    # Compute RMSE on context
+    print("\n" + "-"*60)
+    print("Context RMSE Analysis:")
+    print("-"*60)
+    context_rmses = []
+    for i, (nn_full, nn_context, nn_pred) in enumerate(nearest_neighbors):
+        context_rmse = np.sqrt(np.mean((context_np - nn_context) ** 2))
+        context_rmses.append(context_rmse)
+        print(f"  Prediction {i+1}: Context RMSE = {context_rmse:.6f}")
+    
+    print(f"\nMean Context RMSE: {np.mean(context_rmses):.6f}")
+    print(f"Std Context RMSE:  {np.std(context_rmses):.6f}")
+    print("-"*60)
+    
+    # Statistics
+    print("\n" + "-"*60)
+    print("Nearest Neighbor Distance Statistics:")
+    print(f"  Mean MSE: {np.mean(distances):.6f}")
+    print(f"  Std MSE:  {np.std(distances):.6f}")
+    print(f"  Min MSE:  {np.min(distances):.6f}")
+    print(f"  Max MSE:  {np.max(distances):.6f}")
+    print("-"*60)
+
+# TEST: ATTENTION VISUALIZATION
+def visualize_attention(model, diffusion, context, device=DEVICE, trial_name="Trial", 
+                       layers_to_visualize=[0, 2, 5]):
+    """
+    Visualize attention weights from selected transformer layers.
+    
+    Args:
+        model: Trained model
+        diffusion: Diffusion process
+        context: Context tensor (1, 20, 2)
+        device: Device
+        trial_name: Name for saving
+        layers_to_visualize: Which layers to visualize (0-indexed)
+    """
+    print("\n" + "="*60)
+    print(f"TEST: Attention Visualization - {trial_name}")
+    print("="*60)
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    model.eval()
+    context = context.to(device)
+    
+    # Start with random noise for prediction
+    x_pred = torch.randn(1, PREDICTION_LENGTH, TRAJECTORY_DIM, device=device)
+    
+    # Get attention at middle timestep
+    t = torch.tensor([NOISE_STEPS // 2], device=device)
+    
+    print(f"Extracting attention weights at timestep t={t.item()}...")
+    
+    with torch.no_grad():
+        _, attention_weights = model(x_pred, context, t, return_attention=True)
+    
+    # Filter layers to visualize
+    layers_to_visualize = [l for l in layers_to_visualize if l < len(attention_weights)]
+    num_layers = len(layers_to_visualize)
+    
+    if num_layers == 0:
+        print("No valid layers to visualize.")
+        return
+    
+    print(f"Visualizing attention for {num_layers} layers: {layers_to_visualize}")
+    
+    # Create figure with subplots for each layer
+    fig, axes = plt.subplots(1, num_layers, figsize=(6*num_layers, 5))
+    if num_layers == 1:
+        axes = [axes]
+    
+    for idx, layer_idx in enumerate(layers_to_visualize):
+        attn = attention_weights[layer_idx]  # (batch, num_heads, seq_len, seq_len)
+        
+        # Average over heads
+        attn_avg = attn.mean(dim=1).squeeze(0).cpu().numpy()  # (seq_len, seq_len)
+        
+        # Plot
+        ax = axes[idx]
+        im = ax.imshow(attn_avg, cmap='viridis', aspect='auto')
+        ax.set_title(f'Layer {layer_idx} Attention', fontsize=12, fontweight='bold')
+        ax.set_xlabel('Key Position')
+        ax.set_ylabel('Query Position')
+        plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    
+    plt.suptitle(f'{trial_name} - Transformer Attention Weights (averaged over heads)', 
+                fontsize=14, fontweight='bold')
+    plt.tight_layout()
+    
+    # Save plot
+    save_path = f"test_plots/{trial_name}_attention_{timestamp}.png"
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    print(f"Attention visualization saved to: {save_path}")
+    plt.show()
+    
+    # Also visualize attention for all heads of one layer
+    print(f"\nVisualizing all heads for layer {layers_to_visualize[0]}...")
+    
+    attn_layer = attention_weights[layers_to_visualize[0]].squeeze(0).cpu().numpy()  # (num_heads, seq_len, seq_len)
+    num_heads = attn_layer.shape[0]
+    
+    # Create grid for all heads
+    cols = 4
+    rows = (num_heads + cols - 1) // cols
+    
+    fig, axes = plt.subplots(rows, cols, figsize=(4*cols, 4*rows))
+    axes = axes.flatten() if num_heads > 1 else [axes]
+    
+    for head_idx in range(num_heads):
+        ax = axes[head_idx]
+        im = ax.imshow(attn_layer[head_idx], cmap='viridis', aspect='auto')
+        ax.set_title(f'Head {head_idx}', fontsize=10, fontweight='bold')
+        ax.set_xlabel('Key')
+        ax.set_ylabel('Query')
+        plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    
+    # Hide unused subplots
+    for i in range(num_heads, len(axes)):
+        axes[i].axis('off')
+    
+    plt.suptitle(f'{trial_name} - Layer {layers_to_visualize[0]} All Attention Heads', 
+                fontsize=14, fontweight='bold')
+    plt.tight_layout()
+    
+    # Save plot
+    save_path = f"test_plots/{trial_name}_attention_all_heads_{timestamp}.png"
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    print(f"All heads visualization saved to: {save_path}")
+    plt.show()
+
 # CREATE SUMMARY COMPARISON PLOT
 def create_summary_plot(all_test_results):
     """
@@ -498,7 +815,7 @@ def main():
     print(f"Prediction length: {PREDICTION_LENGTH} frames")
     
     # LOAD MODEL
-    model_path = "trained_models/conditional_diffusion_transformer_XXXXXXXX_XXXXXX.pth"  # UPDATE THIS!
+    model_path = "trained_models/conditional_diffusion_transformer_20241211_123456.pth"  # UPDATE THIS!
     
     if not os.path.exists(model_path):
         print(f"\nERROR: Model file not found at {model_path}")
@@ -506,6 +823,13 @@ def main():
         return
     
     model, config, diffusion = load_trained_model(model_path, device=DEVICE)
+    
+    # LOAD TRAINING DATASET FOR NEAREST NEIGHBOR ANALYSIS
+    print("\n" + "="*60)
+    print("Loading training dataset for nearest neighbor analysis...")
+    print("="*60)
+    train_data = load_train_dataset(base_dir="data", subjects=range(1, 15), 
+                                    max_trajectories=500)
     
     # LOAD TEST TRAJECTORIES (S18 Trial00, Trial05, Trial10)
     test_files = ["Trial00.csv", "Trial05.csv", "Trial10.csv"]
@@ -534,12 +858,28 @@ def main():
             num_starts=num_starting_points
         )
         
-        # Test conditional generation at multiple starts
+        # TEST 1: Conditional generation at multiple starts
         trial_stats = test_conditional_generation_multi_start(
             model, diffusion, subsequences,
             num_samples=10, device=DEVICE, 
             trial_name=trial_file.replace('.csv', '')
         )
+        
+        # TEST 2: Nearest neighbor analysis
+        test_nearest_neighbors(
+            model, diffusion, subsequences, train_data,
+            num_samples=6, device=DEVICE,
+            trial_name=trial_file.replace('.csv', '')
+        )
+        
+        # TEST 3: Attention visualization (only for first trial)
+        if trial_file == "Trial00.csv":
+            context, _, _ = subsequences[0]
+            visualize_attention(
+                model, diffusion, context, device=DEVICE,
+                trial_name=trial_file.replace('.csv', ''),
+                layers_to_visualize=[0, 2, 5]  # First, middle, last layers
+            )
         
         all_test_results.append({
             'trial': trial_file,
@@ -547,21 +887,8 @@ def main():
             'subsequences': subsequences
         })
     
-    # ADDITIONAL TESTS
+    # Summary plots
     if len(all_test_results) > 0:
-        # Test 1: Context Sensitivity Analysis
-        print("\n" + "="*60)
-        print("ADDITIONAL TEST 1: Context Sensitivity Analysis")
-        print("="*60)
-        test_context_sensitivity(model, diffusion, all_test_results, device=DEVICE)
-        
-        # Test 2: Context Interpolation
-        print("\n" + "="*60)
-        print("ADDITIONAL TEST 2: Context Interpolation")
-        print("="*60)
-        test_context_interpolation(model, diffusion, all_test_results, device=DEVICE)
-        
-        # Summary plots
         create_summary_plot(all_test_results)
     
     print("\n" + "="*50)
@@ -571,8 +898,8 @@ def main():
     print(f"Each trajectory tested at {num_starting_points} starting points")
     print("\nTests performed:")
     print("  1. Multi-start conditional generation (5 starting points per trial)")
-    print("  2. Context sensitivity analysis (comparing different contexts)")
-    print("  3. Context interpolation (smooth transitions between contexts)")
+    print("  2. Nearest neighbor analysis (comparing with training set)")
+    print("  3. Attention visualization (transformer attention patterns)")
     print("\nResults saved in: test_plots/")
 
 if __name__ == "__main__":

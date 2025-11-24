@@ -1,7 +1,8 @@
 # CONDITIONAL DIFFUSION TRAINING SCRIPT
-# MODEL: RNN-based diffusion with conditioning on first 20 frames
-# DATA: Berret's recording of Q1 and Q2 (arm reaching in 2D space)
-# TASK: Generate 10 possible continuations for the next 80 frames
+# MODEL USED FOR LEARNING NOISE: RNN, CONDITIONED TO A PREFIX
+# CONDITION ENCODING: MLP OVER THE 20 FRAMES PREFIX
+# DATA USED: BERRET'S RECORDING OF Q1 AND Q2 (ARM REACHING IN A 2D SPACE, FIXED FINAL ABSCISSE)
+# GENERATED DATA: NEXT 80 FRAMES OF THE MOVEMENT
 
 import torch
 import torch.nn as nn
@@ -14,11 +15,11 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 
 # PARAMETERS
-TRAJECTORY_DIM = 2                          # joints q1 and q2
-CONTEXT_LENGTH = 20                         # number of conditioning frames
-PREDICTION_LENGTH = 80                      # number of frames to predict
-MAX_LENGTH = CONTEXT_LENGTH + PREDICTION_LENGTH  # total length = 100
-NOISE_STEPS = 1000                          # number of noise steps for diffusion
+TRAJECTORY_DIM = 2                                  # joints q1 and q2
+CONTEXT_LENGTH = 20                                 # number of conditioning frames
+PREDICTION_LENGTH = 80                              # number of frames to predict
+MAX_LENGTH = CONTEXT_LENGTH + PREDICTION_LENGTH     # total length = 100
+NOISE_STEPS = 1000                                  # number of noise steps for diffusion
 BATCH_SIZE = 32
 NUM_EPOCHS = 1000
 LR = 1e-4
@@ -39,15 +40,17 @@ class ConditionalTrajectoryDataset(torch.utils.data.Dataset):
             prediction_length: number of frames to predict (80)
             use_subsequences: if True, extract multiple subsequences from each trajectory
             subsequence_stride: stride for sliding window when extracting subsequences
+            TODO: A COMPARISON SHOULD BE PERFORMED BETWEEN OVERLAPPING AND NON-OVERLAPPING SUBSAMPLING
         
         Attributes:
             contexts: array of context trajectories (first 20 frames)
             predictions: array of prediction trajectories (next 80 frames)
             full_trajectories: array of complete trajectories (for visualization)
+            TODO: A TEST SHOULD BE PERFORMED ON A LONGER CONTEXT
         """
-        self.contexts = []
-        self.predictions = []
-        self.full_trajectories = []
+        self.contexts = []                                      # then redefined as an array
+        self.predictions = []                                   # then redefined as an array
+        self.full_trajectories = []                             # then redefined as an array
         self.context_length = context_length
         self.prediction_length = prediction_length
         self.total_length = context_length + prediction_length
@@ -56,12 +59,16 @@ class ConditionalTrajectoryDataset(torch.utils.data.Dataset):
         
         for path in tqdm(data_paths, desc="Loading trajectories"):
             try:
-                df = pd.read_csv(path, header=None)
-                trajectory = df.T.values  # transpose to get (time_steps, 2)
+                # NOTE: Berret's data are suprisingly stored in two lines q1 and q2, we thus transpose the data
+                df = pd.read_csv(path, header=None)     # header=None, otherwise we lose q1
+                trajectory = df.T.values                # transpose to get (time_steps, 2)
                 
                 if use_subsequences:
-                    # Extract multiple subsequences from each trajectory
-                    # This creates data augmentation by sliding window
+                    # Extract multiple subsequences from each trajectory (data augmentation)
+                    # NOTE: as the task asked to be performed during the experiment is very simple,
+                    # subsampling here allows us to predict the end of the trajectory not only from
+                    # the beginning of the arm reaching (taking only the beginning of the sequence would
+                    # be very poor in diversity)
                     for start_idx in range(0, len(trajectory) - self.total_length + 1, subsequence_stride):
                         end_idx = start_idx + self.total_length
                         

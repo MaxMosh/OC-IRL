@@ -353,6 +353,7 @@ class ConditionalDiffusion:
         """
         Initialize the Conditional Diffusion process.
         Only the prediction part is noised, the context remains clean.
+        TODO: we should test another noise schedular, for example cosine noise schedular.
         """
         self.noise_steps = noise_steps
         self.beta_start = beta_start

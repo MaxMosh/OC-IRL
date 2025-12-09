@@ -13,7 +13,8 @@ import os
 
 # Ensure the file is named diffusion_model.py in the tools folder
 import sys
-sys.path.append(os.getcwd())
+# sys.path.append(os.getcwd())
+sys.path.append(os.path.join(os.path.dirname(__file__), 'tools'))
 from tools.diffusion_model import TransformerDiffusionModel
 
 # --- Configuration ---

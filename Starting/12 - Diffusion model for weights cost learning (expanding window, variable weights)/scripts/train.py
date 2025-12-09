@@ -12,6 +12,8 @@ from tqdm import tqdm  # Library for progress bars
 import os
 
 # Ensure the file is named diffusion_model.py in the tools folder
+import sys
+sys.path.append(os.getcwd())
 from tools.diffusion_model import TransformerDiffusionModel
 
 # --- Configuration ---

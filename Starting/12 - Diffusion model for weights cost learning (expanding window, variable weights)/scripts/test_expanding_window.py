@@ -9,7 +9,8 @@ import sys
 import os
 
 # Ajout des chemins pour importer tes outils
-sys.path.append(os.path.join(os.path.dirname(__file__), 'tools'))
+sys.path.append(os.getcwd())
+# sys.path.append(os.path.joins(os.path.dirname(__file__), 'tools'))
 
 from tools.diffusion_model import TransformerDiffusionModel
 from tools.OCP_solving_cpin import solve_DOC

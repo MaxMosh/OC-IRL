@@ -815,7 +815,7 @@ def main():
     print(f"Prediction length: {PREDICTION_LENGTH} frames")
     
     # LOAD MODEL
-    model_path = "trained_models/conditional_diffusion_transformer_20241211_123456.pth"  # UPDATE THIS!
+    model_path = "trained_models/conditional_diffusion_transformer_20251121_epochs_1000.pth"  # UPDATE THIS!
     
     if not os.path.exists(model_path):
         print(f"\nERROR: Model file not found at {model_path}")

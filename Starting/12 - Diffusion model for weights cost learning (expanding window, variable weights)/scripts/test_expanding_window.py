@@ -44,7 +44,7 @@ model = TransformerDiffusionModel(
 
 try:
     # Charge le dernier modèle sauvegardé
-    model.load_state_dict(torch.load("diffusion_transformer_final.pth", map_location=DEVICE))
+    model.load_state_dict(torch.load("trained_models/diffusion_transformer_3000_epochs_final.pth", map_location=DEVICE))
     # Si tu veux charger un epoch spécifique :
     # model.load_state_dict(torch.load("diffusion_transformer_1000.pth", map_location=DEVICE))
 except FileNotFoundError:

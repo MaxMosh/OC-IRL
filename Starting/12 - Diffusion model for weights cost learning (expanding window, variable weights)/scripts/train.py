@@ -20,7 +20,7 @@ from tools.diffusion_model import TransformerDiffusionModel
 # --- Configuration ---
 BATCH_SIZE = 64
 LR = 1e-4             # Slightly lower learning rate for Transformers
-EPOCHS = 2000         # Can often require fewer epochs than MLP, but 2000 is safe
+EPOCHS = 3000         # Can often require fewer epochs than MLP, but 2000 is safe
 TIMESTEPS = 1000      # Diffusion steps
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 

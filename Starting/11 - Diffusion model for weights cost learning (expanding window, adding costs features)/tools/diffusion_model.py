@@ -3,7 +3,6 @@ import torch.nn as nn
 import math
 
 class TrajectoryEncoder(nn.Module):
-    # ... (Pas de changement ici, le code reste identique) ...
     def __init__(self, input_channels=3, sequence_length=50, embedding_dim=64):
         super().__init__()
         self.net = nn.Sequential(
@@ -24,7 +23,6 @@ class TrajectoryEncoder(nn.Module):
         return self.net(x)
 
 class SinusoidalPositionEmbeddings(nn.Module):
-    # ... (Pas de changement ici) ...
     def __init__(self, dim):
         super().__init__()
         self.dim = dim
@@ -39,10 +37,7 @@ class SinusoidalPositionEmbeddings(nn.Module):
         return embeddings
 
 class DenoisingNetwork(nn.Module):
-    """
-    Modifié pour accepter une dimension de w variable.
-    """
-    def __init__(self, w_dim=3, cond_dim=64, time_emb_dim=32):
+    def __init__(self, w_dim=5, cond_dim=64, time_emb_dim=32):
         super().__init__()
 
         self.time_mlp = nn.Sequential(
@@ -64,7 +59,7 @@ class DenoisingNetwork(nn.Module):
             nn.Dropout(0.1),
             nn.Linear(256, 256),
             nn.SiLU(),
-            nn.Linear(256, w_dim) # La sortie s'adapte à w_dim
+            nn.Linear(256, w_dim)
         )
 
     def forward(self, x, t, cond):
@@ -73,13 +68,9 @@ class DenoisingNetwork(nn.Module):
         return self.net(x_input)
 
 class ConditionalDiffusionModel(nn.Module):
-    """
-    Wrapper modifié pour initialiser le Denoiser avec la bonne dimension.
-    """
-    def __init__(self, w_dim=3):
+    def __init__(self, w_dim=5):
         super().__init__()
         self.encoder = TrajectoryEncoder()
-        # On passe w_dim au réseau de débruitage
         self.denoiser = DenoisingNetwork(w_dim=w_dim)
 
     def forward(self, w_noisy, t, trajectory):

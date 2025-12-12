@@ -1,9 +1,16 @@
 import torch
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import pickle
 import os
+
+# ADDING CURRENT FOLDER TO THE PATH OF PACKAGES
+import sys
+sys.path.append(os.getcwd())
+from tools.diffusion_model import ConditionalDiffusionModel
 from tools.diffusion_model import ConditionalDiffusionModel
 from tools.OCP_solving_cpin import solve_DOC
 
@@ -13,17 +20,18 @@ TIMESTEPS = 1000
 N_SAMPLES = 50
 MAX_LEN = 50
 MIN_LEN = 5
-W_DIM = 5 # <--- NOUVEAU PARAMÈTRE
+W_DIM = 5
 
 # Generation of an unseen trajectory
 print("Generating unseen trajectory...")
-# Generate random w de taille 5
-w_unseen = np.random.rand(W_DIM) # <--- MODIFICATION
-w_unseen = w_unseen / np.sum(w_unseen)
+# Generate random w
+w_unseen = np.random.rand(W_DIM)
+
+# Normalizing w with norm 1
+# w_unseen = w_unseen / np.sum(w_unseen)
 print(f"Generated w: {w_unseen}")
 
 try:
-    # On suppose que solve_DOC accepte un vecteur de taille 5
     results_angles, results_velocities = solve_DOC(w_unseen, x_fin=-1.0, q_init=np.array([0, np.pi/4]))
     traj_sample = results_angles 
 except Exception as e:
@@ -34,9 +42,7 @@ print("Loading model...")
 with open('scaler_w.pkl', 'rb') as f:
     scaler_w = pickle.load(f)
 
-# Initialisation avec w_dim=5
-model = ConditionalDiffusionModel(w_dim=W_DIM).to(DEVICE) # <--- MODIFICATION
-# Assurez-vous de charger un modèle entrainé avec w_dim=5 !
+model = ConditionalDiffusionModel(w_dim=W_DIM).to(DEVICE)
 model.load_state_dict(torch.load("diffusion_model.pth", map_location=DEVICE))
 model.eval()
 
@@ -49,7 +55,7 @@ def sample_diffusion(model, condition_trajectory, n_samples):
     with torch.no_grad():
         cond_repeated = condition_trajectory.repeat(n_samples, 1, 1)
         # Random noise de taille (N, 5)
-        w_current = torch.randn(n_samples, W_DIM).to(DEVICE) # <--- MODIFICATION
+        w_current = torch.randn(n_samples, W_DIM).to(DEVICE)
 
         for i in reversed(range(TIMESTEPS)):
             t = torch.full((n_samples,), i, device=DEVICE, dtype=torch.long)
@@ -80,7 +86,6 @@ ax_hist.set_xlim(-0.2, 1.2)
 ax_hist.set_ylim(0, 50)
 
 ax_traj = fig.add_subplot(gs[1])
-# ... (Partie trajectoire identique) ...
 ax_traj.set_title("Trajectory (Expanding Window)")
 ax_traj.plot(traj_sample[:, 0], label="q1 (Full)", color='lightgray', linestyle='--')
 ax_traj.plot(traj_sample[:, 1], label="q2 (Full)", color='lightgray', linestyle='--')
@@ -98,21 +103,25 @@ def update(length):
     combined = np.concatenate([padded_traj, mask], axis=1)
     traj_tensor = torch.FloatTensor(combined).unsqueeze(0).transpose(1, 2).to(DEVICE)
 
-    generated_w_normalized = sample_diffusion(model, traj_tensor, N_SAMPLES)
-    generated_w = scaler_w.inverse_transform(generated_w_normalized.cpu().numpy())
+    # NOTE: uncomment the first line and comment the second if you are using scaler
+    # generated_w_normalized = sample_diffusion(model, traj_tensor, N_SAMPLES)
+    generated_w = sample_diffusion(model, traj_tensor, N_SAMPLES)
+
+    # NOTE: uncomment if you are using scaler
+    # generated_w = scaler_w.inverse_transform(generated_w_normalized.cpu().numpy())
 
     ax_hist.clear()
     ax_hist.set_title(f"Predicted Weight Distributions (Window Length: {length})")
     ax_hist.set_xlim(-0.2, 1.2)
     ax_hist.set_ylim(0, 50)
-    
-    # Palette de couleurs étendue pour 5 dimensions
-    colors = ['red', 'green', 'blue', 'purple', 'orange'] # <--- AJOUT DE COULEURS
+
+    colors = ['red', 'green', 'blue', 'purple', 'orange']
     labels = [f'w{i+1}' for i in range(W_DIM)]
-    
-    # Boucle sur W_DIM au lieu de 3
-    for i in range(W_DIM): # <--- MODIFICATION
-        ax_hist.hist(generated_w[:, i], bins=15, alpha=0.5, color=colors[i], label=f'{labels[i]} Pred', density=True)
+
+    for i in range(W_DIM): #
+        # ax_hist.hist(generated_w[:, i], bins=15, alpha=0.5, color=colors[i], label=f'{labels[i]} Pred', density=True)
+        vals = generated_w[:, i].detach().cpu().numpy()                                                                 # CORRECTION
+        ax_hist.hist(vals, bins=15, alpha=0.5, color=colors[i], label=f'{labels[i]} Pred', density=True)                # CORRECTION
         ax_hist.axvline(w_unseen[i], color=colors[i], linestyle='dashed', linewidth=2, label=f'{labels[i]} True')
     
     ax_hist.legend(loc='upper right')

@@ -3,9 +3,14 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset, Dataset
 import numpy as np
-import os
 import pickle
 from sklearn.preprocessing import StandardScaler
+
+import os
+
+# ADDING CURRENT FOLDER TO THE PATH OF PACKAGES
+import sys
+sys.path.append(os.getcwd())
 from tools.diffusion_model import ConditionalDiffusionModel
 
 # Parameters
@@ -14,13 +19,12 @@ LR = 1e-3
 EPOCHS = 10000
 TIMESTEPS = 1000
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-W_DIM = 5  # <--- NOUVEAU PARAMÈTRE
+W_DIM = 5
 
 class SubTrajectoryDataset(Dataset):
-    # ... (Cette classe n'a pas besoin de changement, elle s'adapte à la shape des données) ...
     def __init__(self, trajectories, weights, min_len=5, max_len=50):
         self.trajectories = torch.FloatTensor(trajectories)
-        self.weights = torch.FloatTensor(weights) # Sera de shape (N, 5) automatiquement
+        self.weights = torch.FloatTensor(weights)
         self.min_len = min_len
         self.max_len = max_len
 
@@ -43,27 +47,26 @@ class SubTrajectoryDataset(Dataset):
 def main():
     print("Loading data...")
     try:
-        # ASSUREZ-VOUS QUE CE FICHIER CONTIENT BIEN DES DONNÉES DE DIMENSION 5
         w_data = np.load("data/array_w_10000.npy") 
         traj_data = np.load("data/array_results_angles_10000.npy")
         
-        # Vérification de sécurité
+        # Dimension check
         if w_data.shape[1] != W_DIM:
-            print(f"Attention : Les données chargées ont une dimension {w_data.shape[1]} mais W_DIM={W_DIM}")
-            # Vous pouvez soit arrêter le script, soit laisser planter plus loin si incompatible
+            print(f"Alert: data w is shape {w_data.shape[1]} but W_DIM={W_DIM}")
             
     except FileNotFoundError:
         print("Error: Files not found in 'data/' directory.")
         exit()
 
     # Normalizing weights w
-    scaler_w = StandardScaler()
-    w_data_normalized = scaler_w.fit_transform(w_data)
+    # scaler_w = StandardScaler()
+    # w_data_normalized = scaler_w.fit_transform(w_data)
 
-    with open('scaler_w.pkl', 'wb') as f:
-        pickle.dump(scaler_w, f)
+    # with open('scaler_w.pkl', 'wb') as f:
+    #     pickle.dump(scaler_w, f)
 
-    dataset = SubTrajectoryDataset(traj_data, w_data_normalized)
+    # dataset = SubTrajectoryDataset(traj_data, w_data_normalized)
+    dataset = SubTrajectoryDataset(traj_data, w_data)
     
     dataloader = DataLoader(
         dataset, 
@@ -85,14 +88,12 @@ def main():
         x_noisy = sqrt_alpha_hat * x + sqrt_one_minus_alpha_hat * noise
         return x_noisy, noise
 
-    # Initialisation du modèle avec w_dim=5
-    model = ConditionalDiffusionModel(w_dim=W_DIM).to(DEVICE) # <--- MODIFICATION ICI
+    model = ConditionalDiffusionModel(w_dim=W_DIM).to(DEVICE)
     optimizer = optim.Adam(model.parameters(), lr=LR)
     loss_fn = nn.MSELoss()
 
     print(f"Starting training on {DEVICE} with W_DIM={W_DIM}...")
 
-    # ... (La boucle d'entraînement reste identique) ...
     for epoch in range(EPOCHS):
         model.train()
         epoch_loss = 0

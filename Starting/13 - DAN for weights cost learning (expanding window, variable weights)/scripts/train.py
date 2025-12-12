@@ -18,7 +18,7 @@ from tools.dan_model import DAN_WeightEstimator
 # --- Configuration ---
 BATCH_SIZE = 64
 LR = 1e-3             # RNNs can often handle higher LR than Transformers
-EPOCHS = 3          # Converges faster than Diffusion
+EPOCHS = 500          # Converges faster than Diffusion
 HIDDEN_DIM = 128
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 

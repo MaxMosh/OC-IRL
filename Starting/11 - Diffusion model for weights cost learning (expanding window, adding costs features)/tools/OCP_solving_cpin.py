@@ -28,7 +28,10 @@ N_angles = 2
 
 
 # ROBOT LOADING
-assetsPath = '/home/n7student/Documents/Boulot/CNRS@CREATE/Codes/OC & IRL/Starting/9 - Diffusion model for weights cost learning/assets/'
+import os
+print(os.getcwd())
+# assetsPath = '/home/n7student/Documents/Boulot/CNRS@CREATE/Codes/OC & IRL/Starting/9 - Diffusion model for weights cost learning/assets/'
+assetsPath = '/mnt/e/MaxMosh/Repositories/OC-IRL/Starting/11 - Diffusion model for weights cost learning (expanding window, adding costs features)/assets/'
 urdf = assetsPath + 'mon_robot.urdf'
 robot = RobotWrapper.BuildFromURDF(urdf, [assetsPath,])
 # robot.setVisualizer(GepettoVisualizer()) # AJOUT

@@ -30,8 +30,8 @@ N_angles = 2
 # ROBOT LOADING
 import os
 print(os.getcwd())
-# assetsPath = '/home/n7student/Documents/Boulot/CNRS@CREATE/Codes/OC & IRL/Starting/9 - Diffusion model for weights cost learning/assets/'
-assetsPath = '/mnt/e/MaxMosh/Repositories/OC-IRL/Starting/11 - Diffusion model for weights cost learning (expanding window, adding costs features)/assets/'
+assetsPath = '/home/n7student/Documents/Boulot/CNRS@CREATE/Codes/OC & IRL/Starting/11 - Diffusion model for weights cost learning (expanding window, adding costs features)/assets/'
+# assetsPath = '/mnt/e/MaxMosh/Repositories/OC-IRL/Starting/11 - Diffusion model for weights cost learning (expanding window, adding costs features)/assets/'
 urdf = assetsPath + 'mon_robot.urdf'
 robot = RobotWrapper.BuildFromURDF(urdf, [assetsPath,])
 # robot.setVisualizer(GepettoVisualizer()) # AJOUT
@@ -120,7 +120,15 @@ def cost_function_value(q_var, dq_var):
 
 
 # DOC SOLVING
-def solve_DOC(w, x_fin = -0.75, q_init = [0, ca.pi/4]):
+q1_min_lim_rad, q1_max_lim_rad = -1e-2, ca.pi
+q2_min_lim_rad, q2_max_lim_rad = -1e-2, 3*ca.pi/4
+q1_min_lim_deg, q1_max_lim_deg = (360/2*np.pi)*q1_min_lim_rad, (360/2*np.pi)*q1_max_lim_rad
+q2_min_lim_deg, q2_max_lim_deg = (360/2*np.pi)*q2_min_lim_rad, (360/2*np.pi)*q2_max_lim_rad
+
+# dq_min_lim_deg_par_s, dq_max_lim_deg_par_s = -800, 800
+# dq_min_lim_rad_par_s, dq_max_lim_rad_par_s = (2*np.pi/360)*dq_min_lim_deg_par_s ,(2*np.pi/360)*dq_max_lim_deg_par_s
+def solve_DOC(w, x_fin = -1.0, q_init = [0, ca.pi/4]):
+# def solve_DOC(w, x_fin = 1.9, q_init = [-np.pi/2, np.pi/2]):
     opti = ca.Opti()
 
     # time constants
@@ -165,10 +173,16 @@ def solve_DOC(w, x_fin = -0.75, q_init = [0, ca.pi/4]):
     # opti.subject_to(q_fic[0, N-1] == 0)
     for t in range(N-1):
         opti.subject_to(q[:, t+1] == q[:, t] + dt * dq[:, t])
-        opti.subject_to(opti.bounded(-1e-2, q[0, t+1], ca.pi))
-        opti.subject_to(opti.bounded(-1e-2, q[1, t+1], 3*ca.pi/4))
-    opti.subject_to(opti.bounded(-1e-2, q[0, 0], ca.pi))
-    opti.subject_to(opti.bounded(-1e-2, q[1, 0], 3*ca.pi/4))
+        opti.subject_to(opti.bounded(q1_min_lim_rad, q[0, t+1], q1_max_lim_rad))
+        opti.subject_to(opti.bounded(q2_min_lim_rad, q[1, t+1], q2_max_lim_rad))
+
+        # opti.subject_to(opti.bounded(dq_min_lim_rad_par_s, dq[0, t+1], dq_max_lim_rad_par_s))
+        # opti.subject_to(opti.bounded(dq_min_lim_rad_par_s, dq[1, t+1], dq_max_lim_rad_par_s))
+    opti.subject_to(opti.bounded(q1_min_lim_rad, q[0, 0], q1_max_lim_rad))
+    opti.subject_to(opti.bounded(q2_min_lim_rad, q[1, 0], q2_max_lim_rad))
+
+    # opti.subject_to(opti.bounded(dq_min_lim_rad_par_s, dq[0, 0], dq_max_lim_rad_par_s))
+    # opti.subject_to(opti.bounded(dq_min_lim_rad_par_s, dq[1, 0], dq_max_lim_rad_par_s))
 
 
     # Initial and final contraints
@@ -235,7 +249,8 @@ def generate_DOC_solutions_list_w(array_w, x_fin, q_init, remove_bad_w = True):
         # print(q_init, xfin)
         print(f"\rGenerating trajectory {ind_w}/{nb_w}...", end="", flush=True)
         # try:
-        print(w)
+        # NOTE: comment next line to get back the clean loop print in terminal
+        print(f"\n {w}")
         results_angles_cpin, results_vitesses_angulaires_cpin = solve_DOC(w = w, x_fin = x_fin, q_init=q_init)
         results_angles_list.append(results_angles_cpin)
         results_vitesses_angulaires_list.append(results_vitesses_angulaires_cpin)
@@ -257,13 +272,9 @@ def generate_DOC_solutions_list_w(array_w, x_fin, q_init, remove_bad_w = True):
 def plot_trajectory_q1(results_angles_cpin, results_vitesses_angulaires_cpin, linestyle = '-'):
     number_of_trajectories = len(results_angles_cpin)
     for i in range(number_of_trajectories):
-        # plt.plot(results_angles_cpin[:,0])
-        plt.plot(results_angles_cpin[i][:,0], linestyle = linestyle)
-        # print(results_angles_cpin[:,0].shape)
-        # plt.show()
-        # plt.plot(results_angles_cpin[:,1])
-        # plt.plot(results_angles_cpin[i][:,1], linestyle = linestyle)
-        # plt.show()
+        plt.plot((360/(2*np.pi))*results_angles_cpin[i][:,0], linestyle = linestyle)
+        plt.axhline(y=q1_min_lim_deg, color='red', linestyle='--', linewidth=2)
+        plt.axhline(y=q1_max_lim_deg, color='red', linestyle='--', linewidth=2)
     plt.title(f"q1 values for {number_of_trajectories} DOC solving")
     plt.savefig(f"plots/q1_values_{number_of_trajectories}_trajectories.png")
     plt.show()
@@ -273,13 +284,33 @@ def plot_trajectory_q1(results_angles_cpin, results_vitesses_angulaires_cpin, li
 def plot_trajectory_q2(results_angles_cpin, results_vitesses_angulaires_cpin, linestyle = '-'):
     number_of_trajectories = len(results_angles_cpin)
     for i in range(number_of_trajectories):
-        # plt.plot(results_angles_cpin[:,0])
-        # plt.plot(results_angles_cpin[i][:,0], linestyle = linestyle)
-        # print(results_angles_cpin[:,0].shape)
-        # plt.show()
-        # plt.plot(results_angles_cpin[:,1])
-        plt.plot(results_angles_cpin[i][:,1], linestyle = linestyle)
-        # plt.show()
+        plt.plot((360/(2*np.pi))*results_angles_cpin[i][:,1], linestyle = linestyle)
+        plt.axhline(y=q2_min_lim_deg, color='red', linestyle='--', linewidth=2)
+        plt.axhline(y=q2_max_lim_deg, color='red', linestyle='--', linewidth=2)
     plt.title(f"q2 values for {number_of_trajectories} DOC solving")
     plt.savefig(f"plots/q2_values_{number_of_trajectories}_trajectories.png")
+    plt.show()
+
+
+
+def plot_trajectory_dq1(results_angles_cpin, results_vitesses_angulaires_cpin, linestyle = '-'):
+    number_of_trajectories = len(results_vitesses_angulaires_cpin)
+    for i in range(number_of_trajectories):
+        plt.plot((360/(2*np.pi))*results_vitesses_angulaires_cpin[i][:,0], linestyle = linestyle)
+        # plt.axhline(y=dq_min_lim_deg_par_s, color='red', linestyle='--', linewidth=2)
+        # plt.axhline(y=dq_max_lim_deg_par_s, color='red', linestyle='--', linewidth=2)
+    plt.title(f"dq1 values for {number_of_trajectories} DOC solving")
+    plt.savefig(f"plots/dq1_values_{number_of_trajectories}_trajectories.png")
+    plt.show()
+
+
+
+def plot_trajectory_dq2(results_angles_cpin, results_vitesses_angulaires_cpin, linestyle = '-'):
+    number_of_trajectories = len(results_vitesses_angulaires_cpin)
+    for i in range(number_of_trajectories):
+        plt.plot((360/(2*np.pi))*results_vitesses_angulaires_cpin[i][:,1], linestyle = linestyle)
+        # plt.axhline(y=dq_min_lim_deg_par_s, color='red', linestyle='--', linewidth=2)
+        # plt.axhline(y=dq_max_lim_deg_par_s, color='red', linestyle='--', linewidth=2)
+    plt.title(f"dq2 values for {number_of_trajectories} DOC solving")
+    plt.savefig(f"plots/dq2_values_{number_of_trajectories}_trajectories.png")
     plt.show()

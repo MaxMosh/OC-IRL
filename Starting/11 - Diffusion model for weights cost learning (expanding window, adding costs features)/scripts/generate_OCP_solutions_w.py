@@ -1,12 +1,17 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from tools.OCP_solving_cpin import solve_DOC
-from tools.OCP_solving_cpin import generate_DOC_solutions_list_w, plot_trajectory_q1, plot_trajectory_q2
+# from tools.OCP_solving_cpin import solve_DOC
+from tools.OCP_solving_cpin import dq_max_lim_deg_par_s
+from tools.OCP_solving_cpin import generate_DOC_solutions_list_w
+from tools.OCP_solving_cpin import plot_trajectory_q1, plot_trajectory_q2
+from tools.OCP_solving_cpin import plot_trajectory_dq1, plot_trajectory_dq2
 
 
 # Constants
 x_fin = -1.0
+# x_fin = 1.9
 q_init = np.array([0, np.pi/4])
+# q_init = np.array([-np.pi/2, np.pi/2])
 # N_grid_w = 21  # Reduced from 101 to keep total samples reasonable for 5D simplex
 # N_grid_w = 31
 #N_trajectories = 10000
@@ -60,7 +65,7 @@ from simplex_grid import simplex_grid
 
 # Generate weight vectors for 3-objective optimization
 m = 5  # number of objectives
-r = 11  # resolution (higher = more points)
+r = 13  # resolution (higher = more points)
 
 list_w = simplex_grid(m=m, r=r)
 array_w = np.array(list_w)
@@ -90,6 +95,10 @@ list_results_angles, list_results_angular_velocities, array_w = generate_DOC_sol
 plot_trajectory_q1(list_results_angles, list_results_angular_velocities, linestyle = '-')
 plot_trajectory_q2(list_results_angles, list_results_angular_velocities, linestyle = '-')
 
+plot_trajectory_dq1(list_results_angles, list_results_angular_velocities, linestyle = '-')
+plot_trajectory_dq2(list_results_angles, list_results_angular_velocities, linestyle = '-')
+
+
 array_results_angles = np.array(list_results_angles)
 array_results_angular_velocities = np.array(list_results_angular_velocities)
 
@@ -98,5 +107,6 @@ print(f"Angles array shape: {array_results_angles.shape}")
 
 # Saving trajectories and associated w in npy files
 if (array_w.shape[0] == array_results_angles.shape[0]):
-    np.save(f'data/array_w_simplex_{r}.npy', array_w)
-    np.save(f'data/array_results_angles_simplex_{r}.npy', array_results_angles)
+    np.save(f'data/array_w_simplex_{r}_lim_joint_velocities_{dq_max_lim_deg_par_s}.npy', array_w)
+    np.save(f'data/array_results_angles_simplex_{r}_lim_joint_velocities_{dq_max_lim_deg_par_s}.npy', array_results_angles)
+    np.save(f'data/array_results_angular_velocities_simplex_{r}_lim_joint_velocities_{dq_max_lim_deg_par_s}.npy', array_results_angular_velocities)

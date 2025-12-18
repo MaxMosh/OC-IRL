@@ -10,7 +10,7 @@ import sys
 
 # ADDING CURRENT FOLDER TO THE PATH OF PACKAGES
 sys.path.append(os.getcwd())
-from tools.diffusion_model import ConditionalDiffusionModel
+from tools.diffusion_model_with_angular_velocities_new_architecture import ConditionalDiffusionModel
 
 # Parameters
 BATCH_SIZE = 64 # Si erreur VRAM, passez à 32

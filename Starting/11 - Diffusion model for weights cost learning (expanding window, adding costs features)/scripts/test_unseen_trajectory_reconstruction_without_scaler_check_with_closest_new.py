@@ -10,8 +10,8 @@ import time
 # ADDING CURRENT FOLDER TO THE PATH OF PACKAGES
 import sys
 sys.path.append(os.getcwd())
-from tools.diffusion_model import ConditionalDiffusionModel
-from tools.OCP_solving_cpin import solve_DOC
+from tools.diffusion_model_with_angular_velocities import ConditionalDiffusionModel
+from tools.OCP_solving_cpin_new import solve_DOC
 
 # Parameters
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -25,9 +25,9 @@ INPUT_CHANNELS = 4  # New parameter: q1, q2, dq1, dq2
 print("Generating Ground Truth trajectory...")
 
 # w of bad case 2
-w_true = np.array([0.73879914, 0.07483681, 0.1084752,  0.03661114, 0.0412777])
-# w_true = np.random.rand(W_DIM)
-# w_true = w_true / np.sum(w_true) # Normalize to sum to 1
+# w_true = np.array([0.73879914, 0.07483681, 0.1084752,  0.03661114, 0.0412777])
+w_true = np.random.rand(W_DIM)
+w_true = w_true / np.sum(w_true) # Normalize to sum to 1
 
 print(f"True Weights: {w_true}")
 
@@ -35,17 +35,19 @@ print(f"True Weights: {w_true}")
 try:
     # Utilisation des fichiers du nouvel entrainement
     train_traj = np.load("data/array_results_angles_simplex_21_lim_joint_velocities_800.npy")
+    train_velocities = np.load("data/array_results_angular_velocities_simplex_21_lim_joint_velocities_800.npy") # ADDED
     w_train = np.load("data/array_w_simplex_21_lim_joint_velocities_800.npy")
 except FileNotFoundError:
     print("Warning: New training data files not found. Trying fallback to old filenames...")
-    train_traj = np.load("data/array_results_angles_10000.npy")
-    w_train = np.load("data/array_w_10000.npy")
+    # train_traj = np.load("data/array_results_angles_10000.npy")
+    # w_train = np.load("data/array_w_10000.npy")
 
 
 try:
     # Generating the ground truth trajectory (q1, q2) AND velocities (dq1, dq2)
     # NOTE: We now capture the second return value (velocities)
-    traj_true_q, traj_true_dq = solve_DOC(w_true, x_fin=-1.0, q_init=np.array([0, np.pi/4]))
+    # traj_true_q, traj_true_dq = solve_DOC(w_true, x_fin=-1.0, q_init=np.array([0, np.pi/4]))
+    traj_true_q, traj_true_dq = solve_DOC(w_true, x_fin = 1.9, q_init = [-np.pi/2, np.pi/2])
     
     # traj_true_q Shape: (50, 2)
     # traj_true_dq Shape: (50, 2)
@@ -57,14 +59,12 @@ except Exception as e:
 distance_array_to_ground_truth = ((train_traj - traj_true_q)**2).mean(axis=(1,2))
 closest_traj_to_ground_truth = np.argmin(distance_array_to_ground_truth)
 
-closest_traj = train_traj[closest_traj_to_ground_truth]
-
 # Load Model
 # Initialize with input_channels=4
 model = ConditionalDiffusionModel(w_dim=W_DIM, input_channels=INPUT_CHANNELS).to(DEVICE)
 
 # Load the trained weights
-model_path = "diffusion_model.pth" # Or "checkpoints/diffusion_model_final.pth"
+model_path = "checkpoints/diffusion_model_final.pth"
 if os.path.exists(model_path):
     model.load_state_dict(torch.load(model_path, map_location=DEVICE))
     print(f"Loaded model from {model_path}")
@@ -121,6 +121,10 @@ observation_length = MAX_LEN
 q_input = traj_true_q[:observation_length]   # (50, 2)
 dq_input = traj_true_dq[:observation_length] # (50, 2)
 
+# TEST: trying to retrieve weights from a train trajectory
+# q_input = train_traj[closest_traj_to_ground_truth][:observation_length]
+# dq_input = train_velocities[closest_traj_to_ground_truth][:observation_length]
+
 # 2. Concatenate along feature dimension -> (50, 4)
 combined = np.concatenate([q_input, dq_input], axis=1)
 
@@ -146,7 +150,7 @@ print(f"Predicted Mean Weights: {w_pred_mean}")
 print("Solving OCP with predicted weights to reconstruct trajectory...")
 try:
     # We only need the angles (first return) for plotting
-    traj_reconstructed, _ = solve_DOC(w_pred_mean, x_fin=-1.0, q_init=np.array([0, np.pi/4]))
+    traj_reconstructed, _ = solve_DOC(w_pred_mean, x_fin = 1.9, q_init = [-np.pi/2, np.pi/2])
 except Exception as e:
     print(f"Error solving OCP for reconstruction: {e}")
     traj_reconstructed = np.zeros_like(traj_true_q)
@@ -219,5 +223,5 @@ plt.tight_layout()
 plt.show()
 
 # Save the figure
-fig.savefig("reconstruction_separated_rmse.png")
-print("Comparison plot saved as 'reconstruction_separated_rmse.png'")
+fig.savefig("reconstruction_separated_rmse_new_traj_with_dq.png")
+print("Comparison plot saved as 'reconstruction_separated_rmse_new_traj_with_dq.png'")

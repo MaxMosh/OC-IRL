@@ -8,12 +8,15 @@ import pickle
 # Import des outils
 # Assurez-vous que le fichier s'appelle bien OCP_solving_cpin_new_scaled_costs.py
 # et qu'il est dans le dossier tools
+import sys
+sys.path.append(os.getcwd())
 from tools.OCP_solving_cpin_new_scaled_costs_variables import solve_DOC
 from tools.OCP_solving_cpin_new_scaled_costs_variables import compute_scaling_factors
 from tools.OCP_solving_cpin_new_scaled_costs_variables import plot_trajectory_q1, plot_trajectory_q2, plot_trajectory_ee
 
 # --- CONFIGURATION ---
-NUM_SAMPLES = 1000  # Taille du dataset
+# NUM_SAMPLES = 1000  # Taille du dataset
+NUM_SAMPLES = 100000
 FREQ = 100.0
 NUM_CORES = multiprocessing.cpu_count() - 2  # On laisse 2 coeurs libres pour le système
 

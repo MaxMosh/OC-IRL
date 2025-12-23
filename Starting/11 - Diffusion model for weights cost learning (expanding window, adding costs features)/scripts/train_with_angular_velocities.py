@@ -15,7 +15,7 @@ from tools.diffusion_model_with_angular_velocities import ConditionalDiffusionMo
 # Parameters
 BATCH_SIZE = 64
 LR = 1e-3
-EPOCHS = 20000
+EPOCHS = 10000
 TIMESTEPS = 1000
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 W_DIM = 5
@@ -23,7 +23,7 @@ INPUT_CHANNELS = 4  # q1, q2, dq1, dq2 (No mask needed anymore)
 
 # Checkpoint settings
 CHECKPOINT_DIR = "checkpoints"  # Subfolder name
-SAVE_INTERVAL = 2000            # Save every 2000 epochs
+SAVE_INTERVAL = 1000            # Save every 2000 epochs
 
 class FullTrajectoryDataset(Dataset):
     """
@@ -80,14 +80,14 @@ def main():
         exit()
 
     # Normalizing weights w (Commented out as per original file)
-    # scaler_w = StandardScaler()
-    # w_data_normalized = scaler_w.fit_transform(w_data)
+    scaler_w = StandardScaler()
+    w_data_normalized = scaler_w.fit_transform(w_data)
 
-    # with open('scaler_w.pkl', 'wb') as f:
-    #     pickle.dump(scaler_w, f)
+    with open('scaler_w_new.pkl', 'wb') as f:
+        pickle.dump(scaler_w, f)
 
-    # dataset = FullTrajectoryDataset(traj_angles, traj_velocities, w_data_normalized)
-    dataset = FullTrajectoryDataset(traj_angles, traj_velocities, w_data)
+    dataset = FullTrajectoryDataset(traj_angles, traj_velocities, w_data_normalized)
+    # dataset = FullTrajectoryDataset(traj_angles, traj_velocities, w_data)
     
     dataloader = DataLoader(
         dataset, 
@@ -145,12 +145,12 @@ def main():
 
         # Periodic Saving
         if (epoch + 1) % SAVE_INTERVAL == 0:
-            save_path = os.path.join(CHECKPOINT_DIR, f"diffusion_model_epoch_{epoch+1}.pth")
+            save_path = os.path.join(CHECKPOINT_DIR, f"diffusion_model_epoch_{epoch+1}_with_scaler.pth")
             torch.save(model.state_dict(), save_path)
             print(f"Checkpoint saved: {save_path}")
 
     # Final Save
-    final_path = os.path.join(CHECKPOINT_DIR, "diffusion_model_final.pth")
+    final_path = os.path.join(CHECKPOINT_DIR, "diffusion_model_final_with_scaler.pth")
     torch.save(model.state_dict(), final_path)
     print(f"Final model saved to {final_path}")
 

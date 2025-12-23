@@ -15,7 +15,7 @@ from tools.diffusion_model_with_angular_velocities_new_architecture import Condi
 # Parameters
 BATCH_SIZE = 64 # Si erreur VRAM, passez à 32
 LR = 1e-3       # Les transformers aiment parfois des LR plus faibles (ex: 1e-4), mais tentez 1e-3 d'abord.
-EPOCHS = 20000
+EPOCHS = 200
 TIMESTEPS = 1000
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 W_DIM = 5
@@ -23,7 +23,7 @@ INPUT_CHANNELS = 4  # q1, q2, dq1, dq2
 
 # Checkpoint settings
 CHECKPOINT_DIR = "checkpoints"
-SAVE_INTERVAL = 2000
+SAVE_INTERVAL = 20
 
 class FullTrajectoryDataset(Dataset):
     def __init__(self, angles, velocities, weights):

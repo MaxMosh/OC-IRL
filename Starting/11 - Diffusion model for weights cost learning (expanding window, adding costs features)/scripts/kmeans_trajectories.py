@@ -4,7 +4,9 @@ from sklearn.cluster import KMeans
 import os
 import pinocchio as pin
 
-suffix_number = 10000
+# suffix_number = 10000
+suffix = "simplex_21_lim_joint_velocities_800"
+
 nb_clusters = 20
 bin_width = 0.1
 bins = np.arange(0, 1, bin_width)
@@ -12,8 +14,8 @@ bins = np.arange(0, 1, bin_width)
 def main():
     # Paths
     base_dir = os.path.dirname(__file__)
-    traj_path = os.path.join(base_dir, f'../data/array_results_angles_{suffix_number}.npy')
-    weights_path = os.path.join(base_dir, f'../data/array_w_{suffix_number}.npy')
+    traj_path = os.path.join(base_dir, f'../data/array_results_angles_{suffix}.npy')
+    weights_path = os.path.join(base_dir, f'../data/array_w_{suffix}.npy')
     urdf_path = os.path.join(base_dir, '../assets/mon_robot.urdf')
     
     # Load data
@@ -102,7 +104,7 @@ def main():
     fig1.suptitle(f'K-means Clustering of Trajectories (n_clusters={n_clusters})')
     fig1.tight_layout()
     
-    plot1_path = os.path.join(base_dir, f'../plots/kmeans_clusters_{suffix_number}_{nb_clusters}_clusters.png')
+    plot1_path = os.path.join(base_dir, f'../plots/kmeans_clusters_{suffix}_{nb_clusters}_clusters.png')
     os.makedirs(os.path.dirname(plot1_path), exist_ok=True)
     fig1.savefig(plot1_path)
     print(f"Saved global plot to {plot1_path}")
@@ -139,7 +141,8 @@ def main():
                 ax_hist.set_ylabel('Count')
             ax_hist.grid(axis='y', linestyle='--', alpha=0.5)
             ax_hist.set_xlim(0, 1)
-            ax_hist.set_ylim(0, int(suffix_number/8))
+            # ax_hist.set_ylim(0, int(suffix_number/8))
+            ax_hist.set_ylim(0, 1000)
 
         # 2. Trajectories Angle 1 (Row n_weights)
         ax_traj1 = axes2[n_weights, k]
@@ -195,13 +198,13 @@ def main():
             ax_ee.set_ylabel('Y (m)')
         ax_ee.set_xlabel('X (m)')
         ax_ee.axis('equal') # Important for spatial trajectories
-        ax_ee.set_xlim(-2, 2)
-        ax_ee.set_ylim(-2, 2)
+        ax_ee.set_xlim(-3, 3)
+        ax_ee.set_ylim(-3, 3)
 
     fig2.suptitle('Cluster Analysis: Weight Histograms and Trajectories')
     fig2.tight_layout()
     
-    plot2_path = os.path.join(base_dir, f'../plots/kmeans_clusters_detailed_{suffix_number}_{nb_clusters}_clusters.png')
+    plot2_path = os.path.join(base_dir, f'../plots/kmeans_clusters_detailed_{suffix}_{nb_clusters}_clusters.png')
     fig2.savefig(plot2_path)
     print(f"Saved detailed plot to {plot2_path}")
 

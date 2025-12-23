@@ -65,7 +65,7 @@ model = ConditionalDiffusionModel(w_dim=W_DIM, input_channels=INPUT_CHANNELS).to
 
 # Load the trained weights
 # model_path = "checkpoints/diffusion_model_final.pth"
-model_path = "checkpoints/diffusion_model_epoch_2000.pth"
+model_path = "checkpoints/diffusion_model_cnn_encoding/diffusion_model_epoch_2000.pth"
 if os.path.exists(model_path):
     model.load_state_dict(torch.load(model_path, map_location=DEVICE))
     print(f"Loaded model from {model_path}")

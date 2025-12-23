@@ -12,7 +12,7 @@ import sys
 sys.path.append(os.getcwd())
 
 # --- MODIFICATION: Import du modèle Transformer (fichier standard) ---
-from tools.diffusion_model import ConditionalDiffusionModel
+from tools.diffusion_model_with_angular_velocities_new_architecture import ConditionalDiffusionModel
 from tools.OCP_solving_cpin_new import solve_DOC
 
 # Parameters
@@ -232,5 +232,5 @@ plt.tight_layout()
 plt.show()
 
 # Save the figure
-fig.savefig("reconstruction_separated_rmse_new_traj_with_dq.png")
-print("Comparison plot saved as 'reconstruction_separated_rmse_new_traj_with_dq.png'")
+fig.savefig("reconstruction_separated_rmse_new_traj_with_dq_new_architecture.png")
+print("Comparison plot saved as 'reconstruction_separated_rmse_new_traj_with_dq_new_architecture.png'")

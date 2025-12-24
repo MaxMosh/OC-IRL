@@ -10,7 +10,7 @@ import json
 
 # ADDING CURRENT FOLDER TO THE PATH OF PACKAGES
 sys.path.append(os.getcwd())
-from tools.diffusion_model_with_angular_velocities_scaled_costs_variable import ConditionalDiffusionModel
+from tools.diffusion_model_with_angular_velocities_scaled_costs_variable_new_architecture import ConditionalDiffusionModel
 from tools.OCP_solving_cpin_new_scaled_costs_variables import solve_DOC, compute_scaling_factors
 
 # --- CONFIGURATION ---
@@ -19,9 +19,14 @@ TIMESTEPS = 1000
 N_SAMPLES_DIFFUSION = 10  
 W_DIM = 15 
 INPUT_CHANNELS = 4
-MODEL_PATH = "checkpoints/diff_model_variable_epoch_3000.pth"
+MODEL_PATH = "checkpoints/diff_model_transformer_final.pth" # Updated path
 
-# Generation Parameters (Same as training data generation)
+# Model Architecture Params (Must match training)
+D_MODEL = 256
+NHEAD = 8
+NUM_LAYERS = 6
+
+# Generation Parameters
 Q_INIT_BASES_DEG = [
     [-90, 90],
     [-15, 105],
@@ -35,14 +40,13 @@ def get_scaling_factors():
     """
     Loads scaling factors or computes them if missing.
     """
-    json_path = 'data/scale_factors_random.json' # Try to find the one generated during dataset creation
+    json_path = 'data/scale_factors_random.json' 
     if os.path.exists(json_path):
         print(f"Loading scaling factors from {json_path}")
         with open(json_path, 'r') as f:
             return json.load(f)
     else:
         print("Scaling factors file not found. Computing them on the fly (quick calibration)...")
-        # Quick calibration with fewer samples
         return compute_scaling_factors(num_samples=5, x_fin=1.9, q_init=[-np.pi/2, np.pi/2])
 
 def generate_random_sample(scale_factors):
@@ -52,25 +56,20 @@ def generate_random_sample(scale_factors):
     print("Generating a new random trajectory (Ground Truth)...")
     
     while True:
-        # 1. Randomize N (Duration)
         N_steps = np.random.randint(80, 201) 
         
-        # 2. Randomize q_init
         base_idx = np.random.randint(0, len(Q_INIT_BASES_DEG))
         q_base = np.array(Q_INIT_BASES_DEG[base_idx])
         noise_q = np.random.normal(0, Q_INIT_NOISE_STD_DEG, size=2)
         q_init_deg = q_base + noise_q
         q_init_rad = np.deg2rad(q_init_deg)
         
-        # 3. Randomize x_fin
         noise_x = np.random.normal(0, X_FIN_NOISE_STD)
         x_fin = X_FIN_BASE + noise_x
         
-        # 4. Randomize Weights (3 sets per trajectory)
         w_matrix = np.random.rand(5, 3)
-        w_matrix = w_matrix / w_matrix.sum(axis=0) # Normalize
+        w_matrix = w_matrix / w_matrix.sum(axis=0) 
         
-        # 5. Solve OCP to get Ground Truth
         try:
             q_true, dq_true = solve_DOC(
                 w_matrix, 
@@ -90,7 +89,7 @@ def generate_random_sample(scale_factors):
                     "params": {"x_fin": x_fin, "q_init": q_init_rad, "N": N_steps}
                 }
         except Exception:
-            print(".", end="", flush=True) # Retry indicator
+            print(".", end="", flush=True) 
 
 def sample_diffusion(model, condition_trajectory, n_samples):
     model.eval()
@@ -98,13 +97,19 @@ def sample_diffusion(model, condition_trajectory, n_samples):
     alpha = 1. - beta
     alpha_hat = torch.cumprod(alpha, dim=0)
     
+    # Create Dummy Mask (All False = No Padding)
+    # condition_trajectory is (1, 4, Length)
+    seq_len = condition_trajectory.shape[2]
+    mask = torch.zeros((n_samples, seq_len), dtype=torch.bool).to(DEVICE)
+    
     with torch.no_grad():
         cond_repeated = condition_trajectory.repeat(n_samples, 1, 1)
         w_current = torch.randn(n_samples, W_DIM).to(DEVICE)
 
         for i in reversed(range(TIMESTEPS)):
             t = torch.full((n_samples,), i, device=DEVICE, dtype=torch.long)
-            predicted_noise = model(w_current, t, cond_repeated)
+            # Pass mask to model
+            predicted_noise = model(w_current, t, cond_repeated, trajectory_mask=mask)
 
             alpha_t = alpha[i]
             alpha_hat_t = alpha_hat[i]
@@ -125,15 +130,21 @@ def main():
     # 1. Load Model
     if not os.path.exists(MODEL_PATH):
         print(f"Model {MODEL_PATH} not found.")
-        return
-
-    model = ConditionalDiffusionModel(w_dim=W_DIM, input_channels=INPUT_CHANNELS).to(DEVICE)
+        # Proceeding strictly might fail, but let's allow instantiation to check code logic
+        
+    model = ConditionalDiffusionModel(
+        w_dim=W_DIM, 
+        input_channels=INPUT_CHANNELS,
+        d_model=D_MODEL,
+        nhead=NHEAD,
+        num_layers=NUM_LAYERS
+    ).to(DEVICE)
+    
     try:
         model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
         print("Model loaded successfully.")
     except Exception as e:
-        print(f"Error loading weights: {e}")
-        return
+        print(f"Warning: Could not load weights ({e}).")
 
     # 2. Generate Random Sample
     scale_factors = get_scaling_factors()
@@ -151,16 +162,14 @@ def main():
     print(f"Total Length: {total_len}")
     print(f"Phases: [0-{idx_p1}], [{idx_p1}-{idx_p2}], [{idx_p2}-{total_len}]")
 
-    # --- GRAPHICAL LAYOUT (Same as before) ---
+    # --- GRAPHICAL LAYOUT ---
     fig = plt.figure(figsize=(18, 12))
     gs_main = fig.add_gridspec(2, 1, height_ratios=[1, 1.8], hspace=0.3)
     
-    # Trajectory Zone
     gs_top = gs_main[0].subgridspec(1, 2, wspace=0.15)
     ax_q1 = fig.add_subplot(gs_top[0])
     ax_q2 = fig.add_subplot(gs_top[1])
     
-    # Weights Zone
     gs_weights = gs_main[1].subgridspec(3, 6, width_ratios=[0.2, 1, 1, 1, 1, 1], wspace=0.4, hspace=0.6)
     
     axes_weights = []
@@ -204,7 +213,7 @@ def main():
                     N_steps=total_len, 
                     x_fin=params["x_fin"], 
                     q_init=params["q_init"],
-                    scale_factors=scale_factors, # Important: use same scalers
+                    scale_factors=scale_factors, 
                     verbose=False
                 )
                 if rec_q is not None:
@@ -284,7 +293,7 @@ def main():
     frames = range(0, total_len - 15, 2) 
     anim = FuncAnimation(fig, update, frames=frames, interval=150)
     
-    gif_name = "random_unseen_traj_test.gif"
+    gif_name = "random_unseen_transformer_test.gif"
     anim.save(gif_name, writer='pillow', fps=5)
     print(f"Animation saved as: {gif_name}")
 

@@ -16,7 +16,7 @@ from tools.OCP_solving_cpin_new_scaled_costs_variables import plot_trajectory_q1
 
 # --- CONFIGURATION ---
 # NUM_SAMPLES = 1000  # Taille du dataset
-NUM_SAMPLES = 100000
+NUM_SAMPLES = 300000
 FREQ = 100.0
 NUM_CORES = multiprocessing.cpu_count() - 2  # On laisse 2 coeurs libres pour le système
 

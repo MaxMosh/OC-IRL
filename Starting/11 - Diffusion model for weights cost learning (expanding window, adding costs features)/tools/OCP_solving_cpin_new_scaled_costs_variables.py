@@ -36,8 +36,8 @@ dq_min_lim_rad_par_s, dq_max_lim_rad_par_s = np.deg2rad(dq_min_lim_deg_par_s), n
 
 # --- ROBOT LOADING ---
 # (Assumed to be in the same relative path context)
+# assetsPath = '/mnt/e/MaxMosh/Repositories/OC-IRL/Starting/11 - Diffusion model for weights cost learning (expanding window, adding costs features)/assets/'
 assetsPath = '/home/n7student/Documents/Boulot/CNRS@CREATE/Codes/OC & IRL/Starting/11 - Diffusion model for weights cost learning (expanding window, adding costs features)/assets/'
-# assetsPath = '/home/n7student/Documents/Boulot/CNRS@CREATE/Codes/OC & IRL/Starting/11 - Diffusion model for weights cost learning (expanding window, adding costs features)/assets/'
 urdf = assetsPath + 'mon_robot.urdf'
 
 try:

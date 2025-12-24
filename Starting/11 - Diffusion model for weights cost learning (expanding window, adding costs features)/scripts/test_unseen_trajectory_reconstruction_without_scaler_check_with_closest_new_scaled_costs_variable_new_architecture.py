@@ -40,7 +40,7 @@ def get_scaling_factors():
     """
     Loads scaling factors or computes them if missing.
     """
-    json_path = 'data/scale_factors_random.json' 
+    json_path = 'data/scale_factors_parallel.json' 
     if os.path.exists(json_path):
         print(f"Loading scaling factors from {json_path}")
         with open(json_path, 'r') as f:

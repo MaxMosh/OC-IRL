@@ -7,11 +7,12 @@ from matplotlib.animation import FuncAnimation
 import os
 import sys
 import json
-import joblib # Pour charger les scalers
+import joblib 
 
 sys.path.append(os.getcwd())
+# Ensure this matches your file structure
 from tools.diffusion_model_with_angular_velocities_scaled_costs_variable_new_architecture import ConditionalDiffusionModel
-from tools.OCP_solving_cpin_new_scaled_costs_variables import solve_DOC, compute_scaling_factors
+from tools.OCP_solving_cpin_new_variable import solve_DOC
 
 # --- CONFIGURATION ---
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -19,9 +20,11 @@ TIMESTEPS = 1000
 N_SAMPLES_DIFFUSION = 10  
 W_DIM = 15 
 INPUT_CHANNELS = 4
-MODEL_PATH = "checkpoints/diff_model_tranformer_train1/diff_model_transformer_final.pth"
-SCALER_W_PATH = "checkpoints/diff_model_tranformer_train1/scaler_w.pkl"
-SCALER_TRAJ_PATH = "checkpoints/diff_model_tranformer_train1/scaler_traj.pkl"
+
+# Paths to the NO SCALING checkpoints
+MODEL_PATH = "checkpoints_no_scaling/diff_model_transformer_final.pth"
+SCALER_W_PATH = "checkpoints_no_scaling/scaler_w.pkl"
+SCALER_TRAJ_PATH = "checkpoints_no_scaling/scaler_traj.pkl"
 
 # Model Architecture
 D_MODEL = 256
@@ -36,31 +39,39 @@ X_FIN_NOISE_STD = 0.01
 
 def load_scalers():
     if not os.path.exists(SCALER_W_PATH) or not os.path.exists(SCALER_TRAJ_PATH):
-        raise FileNotFoundError("Scalers not found in checkpoints/")
+        raise FileNotFoundError("Scalers not found. Did you run the training script?")
     print("Loading scalers...")
     return joblib.load(SCALER_TRAJ_PATH), joblib.load(SCALER_W_PATH)
 
-def get_scaling_factors():
-    json_path = 'data/scale_factors_random.json' 
-    if os.path.exists(json_path):
-        with open(json_path, 'r') as f: return json.load(f)
-    else:
-        return compute_scaling_factors(num_samples=5, x_fin=1.9, q_init=[-np.pi/2, np.pi/2])
-
-def generate_random_sample(scale_factors):
+def generate_random_sample():
+    """
+    Generates a new random trajectory using the OCP solver WITHOUT scaling factors.
+    """
     print("Generating a new random trajectory (Ground Truth)...")
     while True:
         N_steps = np.random.randint(80, 201) 
         base_idx = np.random.randint(0, len(Q_INIT_BASES_DEG))
         q_init_rad = np.deg2rad(np.array(Q_INIT_BASES_DEG[base_idx]) + np.random.normal(0, Q_INIT_NOISE_STD_DEG, size=2))
         x_fin = X_FIN_BASE + np.random.normal(0, X_FIN_NOISE_STD)
-        w_matrix = np.random.rand(5, 3); w_matrix /= w_matrix.sum(axis=0) 
+        
+        # Random weights (Normalized sum=1, applied to raw costs)
+        w_matrix = np.random.rand(5, 3)
+        w_matrix /= w_matrix.sum(axis=0) 
         
         try:
-            q_true, dq_true = solve_DOC(w_matrix, N_steps, x_fin, q_init_rad, scale_factors, verbose=False)
+            # Calling solve_DOC without scale_factors
+            q_true, dq_true = solve_DOC(w_matrix, N_steps, x_fin, q_init_rad, verbose=False)
+            
             if q_true is not None:
-                return {"q": q_true, "dq": dq_true, "w": w_matrix, "params": {"x_fin": x_fin, "q_init": q_init_rad, "N": N_steps}}
-        except: print(".", end="", flush=True)
+                print(f"Success! Generated trajectory of length {N_steps}.")
+                return {
+                    "q": q_true, 
+                    "dq": dq_true, 
+                    "w": w_matrix, 
+                    "params": {"x_fin": x_fin, "q_init": q_init_rad, "N": N_steps}
+                }
+        except: 
+            print(".", end="", flush=True)
 
 def sample_diffusion(model, condition_trajectory, n_samples, scaler_w):
     model.eval()
@@ -69,6 +80,7 @@ def sample_diffusion(model, condition_trajectory, n_samples, scaler_w):
     alpha_hat = torch.cumprod(alpha, dim=0)
     
     seq_len = condition_trajectory.shape[2]
+    # Dummy mask (all False = no padding)
     mask = torch.zeros((n_samples, seq_len), dtype=torch.bool).to(DEVICE)
     
     with torch.no_grad():
@@ -77,22 +89,19 @@ def sample_diffusion(model, condition_trajectory, n_samples, scaler_w):
 
         for i in reversed(range(TIMESTEPS)):
             t = torch.full((n_samples,), i, device=DEVICE, dtype=torch.long)
+            # Pass mask to model
             predicted_noise = model(w_current, t, cond_repeated, trajectory_mask=mask)
             
             alpha_t = alpha[i]; alpha_hat_t = alpha_hat[i]; beta_t = beta[i]
             noise = torch.randn_like(w_current) if i > 0 else torch.zeros_like(w_current)
             w_current = (1 / torch.sqrt(alpha_t)) * (w_current - ((1 - alpha_t) / torch.sqrt(1 - alpha_hat_t)) * predicted_noise) + torch.sqrt(beta_t) * noise
 
-    # --- INVERSE TRANSFORM THE OUTPUT ---
+    # --- INVERSE TRANSFORM (StandardScaler) ---
     w_pred_numpy = w_current.cpu().numpy()
     w_pred_unscaled = scaler_w.inverse_transform(w_pred_numpy)
     
-    # Clip to ensure valid weights (approx 0 to 1) 
-    # Optional but helps OCP solver stability
+    # Clip to valid range [0, 1]
     w_pred_unscaled = np.clip(w_pred_unscaled, 0.0, 1.0)
-    
-    # Re-normalize to sum to 1? OCP does implicit balancing but good to keep sum=1
-    # Note: Flattened structure is (15,). We need to reshape (5,3) and normalize columns.
     
     return w_pred_unscaled
 
@@ -106,8 +115,8 @@ def main():
     model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
     print("Model loaded.")
 
-    scale_factors_ocp = get_scaling_factors()
-    sample = generate_random_sample(scale_factors_ocp)
+    # Generate sample (No Scaling Factors)
+    sample = generate_random_sample()
     
     q_true = sample["q"]; dq_true = sample["dq"]; w_true = sample["w"]; params = sample["params"]       
     total_len = q_true.shape[0]
@@ -153,7 +162,7 @@ def main():
         
         # Reshape & Normalize columns for OCP
         w_pred_matrix = w_pred_mean_flat.reshape(5, 3)
-        # Avoid division by zero
+        # Normalize columns to sum to 1 (Implicit constraint)
         sums = w_pred_matrix.sum(axis=0)
         sums[sums == 0] = 1.0
         w_pred_matrix = w_pred_matrix / sums
@@ -162,11 +171,12 @@ def main():
         nonlocal last_reconstructed_q
         if frame % RECONSTRUCTION_STEP == 0 or current_len == total_len:
             try:
-                rec_q, _ = solve_DOC(w_pred_matrix, total_len, params["x_fin"], params["q_init"], scale_factors_ocp, verbose=False)
+                # OCP Solving (NO Scale Factors)
+                rec_q, _ = solve_DOC(w_pred_matrix, total_len, params["x_fin"], params["q_init"], verbose=False)
                 if rec_q is not None: last_reconstructed_q = rec_q
             except: pass
 
-        # --- PLOTTING (Same as before) ---
+        # --- PLOTTING ---
         time_steps = np.arange(total_len)
         q1_lims = (-150, 120); q2_lims = (-20, 180)
 
@@ -212,8 +222,8 @@ def main():
 
     frames = range(0, total_len - 15, 2) 
     anim = FuncAnimation(fig, update, frames=frames, interval=150)
-    anim.save("random_unseen_scaled_test.gif", writer='pillow', fps=5)
-    print(f"Animation saved as: random_unseen_scaled_test.gif")
+    anim.save("random_unseen_NO_SCALING_test.gif", writer='pillow', fps=5)
+    print(f"Animation saved as: random_unseen_NO_SCALING_test.gif")
 
 if __name__ == "__main__":
     main()

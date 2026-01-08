@@ -12,7 +12,7 @@ from pinocchio import casadi as cpin
 
 import matplotlib.pyplot as plt
 
-from tools import irl_utils
+# from tools import irl_utils
 
 
 
@@ -32,7 +32,7 @@ w_true = np.array([0.45, 0.05, 0.5, 0.0, 0.0])
 
 # MO-IRL constants
 MO_IRL_N_subsampling = 4
-NB_ITER_MOIRL = 10
+NB_ITER_MOIRL = 100
 
 
 

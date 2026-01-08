@@ -45,7 +45,7 @@ model = TransformerDiffusionModel(
 
 try:
     # Charge le dernier modèle sauvegardé
-    model.load_state_dict(torch.load("trained_models/diffusion_transformer_3000_epochs_final.pth", map_location=DEVICE))
+    model.load_state_dict(torch.load("trained_models/diffusion_transformer_3000_epochs_1000.pth", map_location=DEVICE))
     # Si tu veux charger un epoch spécifique :
     # model.load_state_dict(torch.load("diffusion_transformer_1000.pth", map_location=DEVICE))
 except FileNotFoundError:
@@ -217,13 +217,25 @@ def update(frame):
     # 2. Poids
     line_mean.set_data(np.arange(SEQ_LEN), mean_w3)
     
-    # Update du fill_between (un peu hacky avec matplotlib animation)
-    ax_weight.collections.clear() # On supprime l'ancien fill
-    # On redessine le fill (Mean +/- 2 std)
-    ax_weight.fill_between(np.arange(SEQ_LEN), 
-                           mean_w3 - 2*std_w3, 
-                           mean_w3 + 2*std_w3, 
-                           color='red', alpha=0.2)
+    # # Update du fill_between (un peu hacky avec matplotlib animation)
+    # ax_weight.collections.clear() # On supprime l'ancien fill
+    # # On redessine le fill (Mean +/- 2 std)
+    # ax_weight.fill_between(np.arange(SEQ_LEN), 
+    #                        mean_w3 - 2*std_w3, 
+    #                        mean_w3 + 2*std_w3, 
+    #                        color='red', alpha=0.2)
+    # Suppression des anciens fill_between (PolyCollection)
+    for coll in list(ax_weight.collections):
+        if isinstance(coll, matplotlib.collections.PolyCollection):
+            coll.remove()
+
+    # Nouveau fill_between
+    ax_weight.fill_between(
+        np.arange(SEQ_LEN),
+        mean_w3 - 2 * std_w3,
+        mean_w3 + 2 * std_w3,
+        color='red', alpha=0.2
+    )
     
     # Indicateur visuel du temps présent
     ax_traj.axvline(x=frame, color='gray', alpha=0.1) # Optionnel, peut charger le plot

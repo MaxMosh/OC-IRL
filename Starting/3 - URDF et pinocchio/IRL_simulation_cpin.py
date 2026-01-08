@@ -19,9 +19,9 @@ results_angle_casadi, results_vitesses_angulaires_casadi = steps_two_arms_robot_
 
 q_op = np.array([results_angle_casadi[:,0], results_angle_casadi[:,1]]).T
 dq_op = np.array([results_vitesses_angulaires_casadi[:,0], results_vitesses_angulaires_casadi[:,1]]).T
-print(dq_op.shape)
+# print(dq_op.shape)
 dPx_op = np.zeros((1,steps_two_arms_robot_cpin.N)).T
-print(dPx_op.shape)
+# print(dPx_op.shape)
 
 # for i in range(steps_two_arms_robot_cpin.N):
 #     dPx_op[i,:] = steps_two_arms_robot_cpin.vx_fun(q_op[i,:], dq_op[i,:])
@@ -117,15 +117,86 @@ for i in range(nb_iter_IRL):
     w_est_list.append(w_est_current)
 
 
-plt.plot(q_op[:,0], label="q1 du DOC initial", linestyle='--')
+# plt.plot(q_op[:,0], label="q1 from the initial DOC solution", linestyle='--')
+# for i in range(nb_iter_IRL):
+#     if (((q_op[:,0] - results_angles_list[0,:,i])**2).sum() < 5):
+#         if (i == (nb_iter_IRL-1)):
+#             plt.plot(results_angles_list[0,:,i], label="q1 for each iteration of MO-IRL", color=(1, 0, 0, 0.5))
+#         else:
+#             plt.plot(results_angles_list[0,:,i], color=(1, 0, 0, 0.2))
+# plt.legend()
+# plt.savefig("plots/MO_IRL_each_iteration_q1.png")
+# plt.show()
+
+# plt.plot(q_op[:,1], label="q2 from the initial DOC solution", linestyle='--')
+# for i in range(nb_iter_IRL):
+#     if (((q_op[:,1] - results_angles_list[1,:,i])**2).sum() < 5):
+#         if (i == (nb_iter_IRL-1)):
+#             plt.plot(results_angles_list[1,:,i], label="q2 for each iteration of MO-IRL", color=(1, 0, 0, 0.5))
+#         else:
+#             plt.plot(results_angles_list[1,:,i], alpha=0.2)
+# plt.legend()
+# plt.savefig("plots/MO_IRL_each_iteration_q2.png")
+# plt.show()
+import matplotlib.pyplot as plt
+
+fig, (ax_q1, ax_q2) = plt.subplots(1, 2, figsize=(12, 6), sharex=True)
+
+# ===== q1 =====
+ax_q1.plot(
+    q_op[:, 0],
+    label="q1 from the initial DOC solution",
+    linestyle='--'
+)
+
 for i in range(nb_iter_IRL):
-    plt.plot(results_angles_list[0,:,i])
+    if (((q_op[:, 0] - results_angles_list[0, :, i])**2).sum() < 5):
+        if i == nb_iter_IRL - 1:
+            ax_q1.plot(
+                results_angles_list[0, :, i],
+                label="q1 for each iteration of MO-IRL",
+                color=(1, 0, 0, 0.5)
+            )
+        else:
+            ax_q1.plot(
+                results_angles_list[0, :, i],
+                color=(1, 0, 0, 0.2)
+            )
+
+ax_q1.legend()
+ax_q1.set_ylabel("q1 (rad)")
+ax_q1.set_title("MO-IRL iterations - q1")
+
+# ===== q2 =====
+ax_q2.plot(
+    q_op[:, 1],
+    label="q2 from the initial DOC solution",
+    linestyle='--'
+)
+
+for i in range(nb_iter_IRL):
+    if (((q_op[:, 1] - results_angles_list[1, :, i])**2).sum() < 5):
+        if i == nb_iter_IRL - 1:
+            ax_q2.plot(
+                results_angles_list[1, :, i],
+                label="q2 for each iteration of MO-IRL",
+                color=(1, 0, 0, 0.5)
+            )
+        else:
+            ax_q2.plot(
+                results_angles_list[1, :, i],
+                alpha=0.2
+            )
+
+ax_q2.legend()
+ax_q2.set_ylabel("q2 (rad)")
+ax_q2.set_xlabel("Time step")
+ax_q2.set_title("MO-IRL iterations - q2")
+
+plt.tight_layout()
+plt.savefig("plots/MO_IRL_each_iteration_q1_q2.png")
 plt.show()
 
-plt.plot(q_op[:,1], label="q2 du DOC initial", linestyle='--')
-for i in range(nb_iter_IRL):
-    plt.plot(results_angles_list[1,:,i])
-plt.show()
 
 
 # print(f"shape res IRL : {results_angles_list[:,:,:].shape}\n")
@@ -138,17 +209,50 @@ plt.show()
 
 # best_index = np.argmin(rmse_tot)
 
+rmse_q1 = np.sqrt(np.mean((q_op[:,0] - results_angles_list[0,:,-1])**2))
+rmse_q2 = np.sqrt(np.mean((q_op[:,1] - results_angles_list[1,:,-1])**2))
 
-plt.plot(q_op[:,0], label="q1 initial DOC", linestyle='--')
-plt.plot(results_angles_list[0,:,-1], label="q1 last iteration IRL")
-plt.plot(results_angles_list[0,:,ind_cand], label="q1 best iteration IRL")
-plt.legend()
-plt.show()
+fig, (ax_q1, ax_q2) = plt.subplots(1, 2, figsize=(12, 6), sharex=True)
 
-plt.plot(q_op[:,1], label="q2 du DOC initial", linestyle='--')
-plt.plot(results_angles_list[1,:,-1], label="q2 dernière itération IRL")
-plt.plot(results_angles_list[1,:,ind_cand], label="q2 best iteration IRL")
-plt.legend()
+# ===== q1 =====
+ax_q1.plot(q_op[:, 0], label="q1 from the initial DOC solution", linestyle='--')
+ax_q1.plot(results_angles_list[0, :, -1], label="q1 last iteration IRL")
+
+ax_q1.text(
+    0.98, 0.05,
+    f'RMSE: {rmse_q1:.2f} rad',
+    transform=ax_q1.transAxes,
+    horizontalalignment='right',
+    verticalalignment='bottom',
+    fontsize=12,
+    bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="black", alpha=0.8)
+)
+
+ax_q1.legend()
+ax_q1.set_ylabel("q1 (rad)")
+ax_q1.set_title("MO-IRL last iteration vs ground truth - q1")
+
+# ===== q2 =====
+ax_q2.plot(q_op[:, 1], label="q2 from the initial DOC solution", linestyle='--')
+ax_q2.plot(results_angles_list[1, :, -1], label="q2 last iteration IRL")
+
+ax_q2.text(
+    0.98, 0.05,
+    f'RMSE: {rmse_q2:.2f} rad',
+    transform=ax_q2.transAxes,
+    horizontalalignment='right',
+    verticalalignment='bottom',
+    fontsize=12,
+    bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="black", alpha=0.8)
+)
+
+ax_q2.legend()
+ax_q2.set_ylabel("q2 (rad)")
+ax_q2.set_xlabel("Time step")
+ax_q2.set_title("MO-IRL last iteration vs ground truth - q2")
+
+plt.tight_layout()
+plt.savefig("plots/MO_IRL_last_iteration_q1_q2.png")
 plt.show()
 
 
@@ -168,6 +272,9 @@ print(f"mean dq2 for opt: {(dq_op[1,:]**2).sum()}")
 print(results_angles_velocity_list.shape)
 print(f"mean dq1 for one step of IRL: {(results_angles_velocity_list[0,:,1]**2).sum()}")
 print(f"mean dq2 for one step of IRL: {(results_angles_velocity_list[1,:,1]**2).sum()}")
+
+print(f"True value of w: {steps_two_arms_robot_cpin.w_true}")
+print(f"Recovered value of w: {w_est_list[-1]}")
 
 """
 w_est_array = np.array(w_est_list)

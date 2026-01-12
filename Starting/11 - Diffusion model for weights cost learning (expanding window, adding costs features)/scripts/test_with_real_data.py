@@ -22,7 +22,8 @@ W_DIM = 15
 INPUT_CHANNELS = 4
 
 # Paths
-MODEL_PATH = "checkpoints_no_scaling/diff_model_transformer_epoch_500.pth"
+# MODEL_PATH = "checkpoints_no_scaling/diff_model_transformer_epoch_500_with_null_acceleration.pth"
+MODEL_PATH = "checkpoints_no_scaling/diff_model_transformer_epoch_100.pth"
 SCALER_W_PATH = "checkpoints_no_scaling/scaler_w.pkl"
 SCALER_TRAJ_PATH = "checkpoints_no_scaling/scaler_traj.pkl"
 EXPERIMENTAL_DATA_PATH = "../8 - Diffusion model with conditionning (Berret data)/data/S01/Trial45.csv"

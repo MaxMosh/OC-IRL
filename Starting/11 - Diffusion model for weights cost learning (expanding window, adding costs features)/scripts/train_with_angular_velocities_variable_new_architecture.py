@@ -20,13 +20,14 @@ from tools.diffusion_model_with_angular_velocities_scaled_costs_variable_new_arc
 # --- HYPERPARAMETERS ---
 BATCH_SIZE = 512
 LR = 5e-4
-EPOCHS = 60000
+EPOCHS = 1
 TIMESTEPS = 1000
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 NUM_WORKERS = 0 # Set to 0 for stability on Windows/WSL
 
 # Model Config
-W_DIM = 15 
+# W_DIM = 15
+W_DIM = 12
 INPUT_CHANNELS = 4 
 D_MODEL = 256
 NHEAD = 8
@@ -34,23 +35,27 @@ NUM_LAYERS = 6
 
 CHECKPOINT_DIR = "checkpoints_no_scaling"
 # Look for the dataset generated without OCP scaling factors
-DATASET_PATH = "data/dataset_parallel_NO_SCALING.pkl" 
+# DATASET_PATH = "data/dataset_parallel_NO_SCALING.pkl" 
+# DATASET_PATH = "data/dataset_parallel_299999_samples_WITH_ACC.pkl"
+DATASET_PATH = "data/dataset_unifie.pkl"
 
 class VariableLengthDataset(Dataset):
-    def __init__(self, data_path, scaler_traj=None, scaler_w=None, random_slice=True, min_len=20):
+    # def __init__(self, data_path, scaler_traj=None, scaler_w=None, random_slice=True, min_len=20):
+    def __init__(self, data_path, scaler_traj=None, scaler_w=None, random_slice=True, min_len=5):
         print("Loading dataset into RAM...")
         # Fallback search if exact path doesn't exist
-        if not os.path.exists(data_path):
-             files = [f for f in os.listdir("data") if f.endswith(".pkl") and "NO_SCALING" in f]
-             if files:
-                 data_path = os.path.join("data", sorted(files)[-1])
-                 print(f"Found dataset: {data_path}")
+        # if not os.path.exists(data_path):
+        #      files = [f for f in os.listdir("data") if f.endswith(".pkl") and "NO_SCALING" in f]
+        #      if files:
+        #          data_path = os.path.join("data", sorted(files)[-1])
+        #          print(f"Found dataset: {data_path}")
         
         with open(data_path, 'rb') as f:
             raw_data = pickle.load(f)
         
         self.w_matrices = raw_data["w_matrices"] # List of (5, 3) arrays
         self.q_trajs = raw_data["q_trajs"]       # List of (N, 2) arrays
+        assert len(self.w_matrices) == len(self.q_trajs), f"Mismatch: {len(self.w_matrices)} W vs {len(self.q_trajs)} Q"
         self.dq_trajs = raw_data["dq_trajs"]     # List of (N, 2) arrays
         
         self.random_slice = random_slice
@@ -91,6 +96,8 @@ class VariableLengthDataset(Dataset):
 
     def __getitem__(self, idx):
         # Retrieve pre-normalized data
+        # print(idx)
+        # print(self.traj_data[idx])
         traj_norm = self.traj_data[idx] # (N, 4) numpy
         w_norm = self.w_data[idx]       # (15,) tensor
 

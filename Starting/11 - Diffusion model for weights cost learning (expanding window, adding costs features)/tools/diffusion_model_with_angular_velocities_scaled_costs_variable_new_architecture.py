@@ -73,7 +73,8 @@ class TransformerDenoiser(nn.Module):
     Denoises the weights using a Transformer Decoder architecture.
     Treats the weights matrix (5, 3) as a sequence of length 3.
     """
-    def __init__(self, w_features=5, w_phases=3, d_model=128, nhead=4, num_layers=4, dropout=0.1):
+    # def __init__(self, w_features=5, w_phases=3, d_model=128, nhead=4, num_layers=4, dropout=0.1):
+    def __init__(self, w_features=4, w_phases=3, d_model=128, nhead=4, num_layers=4, dropout=0.1):
         super().__init__()
         self.w_features = w_features
         self.w_phases = w_phases
@@ -152,7 +153,8 @@ class ConditionalDiffusionModel(nn.Module):
     Main Model Class.
     Combines TrajectoryTransformerEncoder and TransformerDenoiser.
     """
-    def __init__(self, w_dim=15, input_channels=4, d_model=256, nhead=8, num_layers=6):
+    # def __init__(self, w_dim=15, input_channels=4, d_model=256, nhead=8, num_layers=6):
+    def __init__(self, w_dim=12, input_channels=4, d_model=256, nhead=8, num_layers=6):
         super().__init__()
         
         # Configuration

@@ -11,12 +11,14 @@ import joblib
 
 sys.path.append(os.getcwd())
 from tools.diffusion_model_with_angular_velocities_scaled_costs_variable_new_architecture import ConditionalDiffusionModel
-from tools.OCP_solving_cpin_new_scaled_costs_variables import solve_DOC, compute_scaling_factors
+# from tools.OCP_solving_cpin_new_scaled_costs_variables import solve_DOC, compute_scaling_factors
+from tools.OCP_solving_cpin_new_variable_corr_acc import solve_DOC#, compute_scaling_factors
 
 # --- CONFIGURATION ---
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 TIMESTEPS = 1000
 N_SAMPLES_DIFFUSION = 50 
+# N_SAMPLES_DIFFUSION = 3
 W_DIM = 15 
 INPUT_CHANNELS = 4
 
@@ -46,16 +48,30 @@ def load_scalers():
 def generate_random_sample():
     print("Generating a new random trajectory (Ground Truth)...")
     while True:
-        N_steps = np.random.randint(80, 201) 
+        # N_steps = np.random.randint(80, 201) 
+        N_steps = 183
         base_idx = np.random.randint(0, len(Q_INIT_BASES_DEG))
-        q_init_rad = np.deg2rad(np.array(Q_INIT_BASES_DEG[base_idx]) + np.random.normal(0, Q_INIT_NOISE_STD_DEG, size=2))
+        # q_init_rad = np.deg2rad(np.array(Q_INIT_BASES_DEG[base_idx]) + np.random.normal(0, Q_INIT_NOISE_STD_DEG, size=2))
+        q_init_rad = np.deg2rad(np.array([-22, 101]))
         x_fin = X_FIN_BASE + np.random.normal(0, X_FIN_NOISE_STD)
         
-        w_matrix = np.random.rand(5, 3)
-        w_matrix /= w_matrix.sum(axis=0) 
+        # w_matrix = np.random.rand(5, 3)
+        # w_matrix /= w_matrix.sum(axis=0) 
+
+        # arr = np.array([[0.31364062, 0.2794092 , 0.16894444],
+        #                 [0.33296416, 0.22349221, 0.05384676],
+        #                 [0.12804494, 0.05781709, 0.302835  ],
+        #                 [0.07996223, 0.10959921, 0.32429108],
+        #                 [0.14538805, 0.3296823 , 0.15008272]])
+        w_matrix = np.array([[0.32, 0.27, 0.17],
+                            [0.33, 0.22, 0.06],
+                            [0.13, 0.05, 0.3],
+                            [0.08, 0.1, 0.32],
+                            [0.14, 0.36, 0.15]])
         
         try:
-            q_true, dq_true = solve_DOC(w_matrix, N_steps, x_fin, q_init_rad, verbose=False)
+            # q_true, dq_true = solve_DOC(w_matrix, N_steps, x_fin, q_init_rad, verbose=False)
+            q_true, dq_true, _ = solve_DOC(w_matrix, N_steps, x_fin, q_init_rad, verbose=False)
             if q_true is not None:
                 return {
                     "q": q_true, 
@@ -137,6 +153,7 @@ def main():
     last_reconstructed_q = np.zeros_like(q_true)
     last_reconstructed_dq = np.zeros_like(dq_true)
     RECONSTRUCTION_STEP = 10 
+    # RECONSTRUCTION_STEP = 170
 
     def update(frame):
         current_len = frame + 15 
@@ -164,7 +181,8 @@ def main():
         nonlocal last_reconstructed_q, last_reconstructed_dq
         if frame % RECONSTRUCTION_STEP == 0 or current_len == total_len:
             try:
-                rec_q, rec_dq = solve_DOC(w_pred_mean, total_len, params["x_fin"], params["q_init"], verbose=False)
+                # rec_q, rec_dq = solve_DOC(w_pred_mean, total_len, params["x_fin"], params["q_init"], verbose=False)
+                rec_q, rec_dq, _ = solve_DOC(w_pred_mean, total_len, params["x_fin"], params["q_init"], verbose=False)
                 if rec_q is not None: 
                     last_reconstructed_q = rec_q
                     last_reconstructed_dq = rec_dq
@@ -173,10 +191,14 @@ def main():
         # --- PLOTTING TRAJECTORIES ---
         time_steps = np.arange(total_len)
         plots_config = [
-            (ax_q1, q_true[:,0], last_reconstructed_q[:,0], "q1 (deg)", (-150, 120)),
-            (ax_q2, q_true[:,1], last_reconstructed_q[:,1], "q2 (deg)", (-20, 180)),
-            (ax_dq1, dq_true[:,0], last_reconstructed_dq[:,0], "dq1 (deg/s)", (-500, 500)),
-            (ax_dq2, dq_true[:,1], last_reconstructed_dq[:,1], "dq2 (deg/s)", (-500, 500))
+            # (ax_q1, q_true[:,0], last_reconstructed_q[:,0], "q1 (deg)", (-150, 120)),
+            (ax_q1, q_true[:,0], last_reconstructed_q[:,0], "q1 (deg)", (-30, -10)),
+            # (ax_q2, q_true[:,1], last_reconstructed_q[:,1], "q2 (deg)", (-20, 180)),
+            (ax_q2, q_true[:,1], last_reconstructed_q[:,1], "q2 (deg)", (25, 125)),
+            # (ax_dq1, dq_true[:,0], last_reconstructed_dq[:,0], "dq1 (deg/s)", (-500, 500)),
+            (ax_dq1, dq_true[:,0], last_reconstructed_dq[:,0], "dq1 (deg/s)", (-20, 20)),
+            # (ax_dq2, dq_true[:,1], last_reconstructed_dq[:,1], "dq2 (deg/s)", (-500, 500))
+            (ax_dq2, dq_true[:,1], last_reconstructed_dq[:,1], "dq2 (deg/s)", (-70, -10))
         ]
 
         for ax, data_true, data_pred, title, lims in plots_config:
@@ -215,7 +237,7 @@ def main():
             ax_p.text(-0.1, 0, phase_names[r], ha='right', va='center', fontsize=10, fontweight='bold', transform=ax_p.transData)
             ax_p.text(0.5, 0, f"{int(p_val*100)}%", ha='center', va='center', color='white' if p_val > 0.5 else 'black', fontsize=8)
 
-            # Histograms (ALWAYS VISIBLE)
+            # Histograms
             for c in range(5): 
                 ax = axes_weights[r][c]; ax.clear()
                 

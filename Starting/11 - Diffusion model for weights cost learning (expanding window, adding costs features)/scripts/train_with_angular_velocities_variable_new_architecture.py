@@ -27,7 +27,8 @@ NUM_WORKERS = 0 # Set to 0 for stability on Windows/WSL
 
 # Model Config
 # W_DIM = 15
-W_DIM = 12
+# W_DIM = 12
+W_DIM = 4
 INPUT_CHANNELS = 4 
 D_MODEL = 256
 NHEAD = 8
@@ -37,7 +38,7 @@ CHECKPOINT_DIR = "checkpoints_no_scaling"
 # Look for the dataset generated without OCP scaling factors
 # DATASET_PATH = "data/dataset_parallel_NO_SCALING.pkl" 
 # DATASET_PATH = "data/dataset_parallel_299999_samples_WITH_ACC.pkl"
-DATASET_PATH = "data/dataset_unifie.pkl"
+DATASET_PATH = "data/dataset_unifie_one_cost.pkl"
 
 class VariableLengthDataset(Dataset):
     # def __init__(self, data_path, scaler_traj=None, scaler_w=None, random_slice=True, min_len=20):

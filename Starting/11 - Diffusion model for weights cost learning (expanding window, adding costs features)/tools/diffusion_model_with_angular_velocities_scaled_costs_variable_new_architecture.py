@@ -154,13 +154,17 @@ class ConditionalDiffusionModel(nn.Module):
     Combines TrajectoryTransformerEncoder and TransformerDenoiser.
     """
     # def __init__(self, w_dim=15, input_channels=4, d_model=256, nhead=8, num_layers=6):
-    def __init__(self, w_dim=12, input_channels=4, d_model=256, nhead=8, num_layers=6):
+    # def __init__(self, w_dim=12, input_channels=4, d_model=256, nhead=8, num_layers=6):
+    def __init__(self, w_dim=4, input_channels=4, d_model=256, nhead=8, num_layers=6):
         super().__init__()
         
         # Configuration
         # w_dim must be divisible by 3 (phases)
-        assert w_dim % 3 == 0, "w_dim must be divisible by 3 (3 phases)"
-        w_features = w_dim // 3
+        # assert w_dim % 3 == 0, "w_dim must be divisible by 3 (3 phases)"
+        # w_features = w_dim // 3
+        n_phases = 1 
+        assert w_dim % n_phases == 0, f"w_dim must be divisible by {n_phases}"
+        w_features = w_dim // n_phases
         
         self.encoder = TrajectoryTransformerEncoder(
             input_channels=input_channels,
@@ -171,7 +175,8 @@ class ConditionalDiffusionModel(nn.Module):
         
         self.denoiser = TransformerDenoiser(
             w_features=w_features,
-            w_phases=3,
+            # w_phases=3,
+            w_phases=n_phases,
             d_model=d_model,
             nhead=nhead,
             num_layers=num_layers # Decoder gets full layers

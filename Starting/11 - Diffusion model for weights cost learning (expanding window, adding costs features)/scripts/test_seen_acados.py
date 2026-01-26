@@ -7,6 +7,7 @@ from matplotlib.animation import FuncAnimation
 import os
 import sys
 import copy
+import pickle
 import pinocchio as pin
 import joblib 
 
@@ -19,46 +20,44 @@ from utils.model_utils_motif import Robot, build_biomechanical_model
 from utils.doc_utils_new_acados_refactor3 import DocHumanMotionGeneration_InvDyn
 from tools.diffusion_model_with_angular_velocities_scaled_costs_variable_new_architecture import ConditionalDiffusionModel
 
-# ADDED
-import pickle
-
 # --- CONFIGURATION ---
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 TIMESTEPS = 1000
-N_SAMPLES_DIFFUSION = 50
 
-# Model Architecture Config
-W_DIM = 12
+# Nombre de trajectoires pour l'ensemble (nuage)
+N_SAMPLES_DIFFUSION = 20  
+RECONSTRUCTION_STEP = 5   
+
+# --- PARAMETRES DE SELECTION ---
+DATASET_PATH = "data/dataset_unifie.pkl" 
+SAMPLE_IDX = 100 
+
+# Model Architecture
+W_DIM = 12          
 N_PHASES = 3
-N_COSTS = 4
-INPUT_CHANNELS = 4
+N_COSTS = 4         
+INPUT_CHANNELS = 4  
 D_MODEL = 256
 NHEAD = 8
 NUM_LAYERS = 6
 
 # Paths
 CHECKPOINT_DIR = "checkpoints_no_scaling/diff_model_acados"
-# MODEL_PATH = os.path.join(CHECKPOINT_DIR, "diff_model_transformer_epoch_50.pth")
-MODEL_PATH = os.path.join(CHECKPOINT_DIR, "diff_model_transformer_epoch_250.pth")
+MODEL_PATH = os.path.join(CHECKPOINT_DIR, "diff_model_transformer_epoch_250.pth") 
 
 SCALER_W_PATH = os.path.join(CHECKPOINT_DIR, "scaler_w.pkl")
 SCALER_TRAJ_PATH = os.path.join(CHECKPOINT_DIR, "scaler_traj.pkl")
 PARAM_FILE = "parameters.toml"
 
-# Simulation / OCP Params
 COST_ORDER = ["min_joint_torque", "min_torque_change", "min_joint_acc", "min_joint_vel"]
-RECONSTRUCTION_STEP = 1
 
 # --- 1. SETUP ROBOT & ACADOS ---
 def setup_robot_and_param():
     script_directory = os.path.dirname(os.path.abspath(__file__))
-    parent_directory = os.path.dirname(script_directory)
-
     try:
         dict_param = parse_params(os.path.join(os.getcwd(), PARAM_FILE))
     except FileNotFoundError:
         dict_param = parse_params(os.path.join(os.getcwd(), "scripts", PARAM_FILE))
-        
     param = convert_to_class(dict_param) 
 
     urdf_name = "human.urdf"
@@ -123,28 +122,31 @@ def setup_robot_and_param():
 
     return model_red, param
 
-# --- 2. WEIGHT SAMPLER ---
-def sample_W_dirichlet_mixture(n_phases=3, n_costs=4, seed=None):
-    if seed is not None:
-        rng = np.random.default_rng(seed)
-    else:
-        rng = np.random.default_rng()
-
-    a_values = np.asarray((0.2, 0.5, 1.0, 2.0), dtype=float)
-    a_probs = np.asarray((0.15, 0.25, 0.45, 0.15), dtype=float)
-    a_probs = a_probs / a_probs.sum()
-
-    d = n_phases * n_costs
-    a = rng.choice(a_values, p=a_probs)
-    w_flat = rng.dirichlet(np.full(d, a)) 
-    W = w_flat.reshape(n_phases, n_costs)
-
-    return W
+# --- 2. LOAD DATASET SAMPLE ---
+def load_training_sample(dataset_path, idx):
+    if not os.path.exists(dataset_path):
+        raise FileNotFoundError(f"Dataset not found at {dataset_path}")
+    
+    print(f"Loading dataset from {dataset_path}...")
+    with open(dataset_path, 'rb') as f:
+        data = pickle.load(f)
+    
+    n_samples = len(data["q_trajs"])
+    if idx >= n_samples:
+        raise IndexError(f"Index {idx} out of bounds (max {n_samples-1})")
+    
+    print(f"Extracting sample {idx} / {n_samples}...")
+    q_traj = data["q_trajs"][idx]      
+    dq_traj = data["dq_trajs"][idx]    
+    w_raw = data["w_matrices"][idx]    
+    W_matrix = w_raw.T                 
+    params = data["params"][idx]
+    
+    return q_traj, dq_traj, W_matrix, params
 
 # --- 3. OCP SOLVER INTERFACE ---
 def solve_ocp_interface(W_matrix, model, param_template, q_init, x_fin, nb_samples):
     param = copy.deepcopy(param_template)
-    
     param.nb_samples = nb_samples
     param.Tf = param.nb_samples * 1/50 - 1/50
     param.qdi = q_init
@@ -163,18 +165,21 @@ def solve_ocp_interface(W_matrix, model, param_template, q_init, x_fin, nb_sampl
         param.weights[cost_name] = W_matrix[:, i].tolist()
 
     rand_id = np.random.randint(0, 100000)
-    param.ocp_name = f"test_diffusion_{rand_id}"
+    param.ocp_name = f"test_ens_{rand_id}" 
     param.build_solver = True 
 
+    old_stdout = sys.stdout
     try:
+        sys.stdout = open(os.devnull, 'w')
         doc = DocHumanMotionGeneration_InvDyn(model, param)
         xs, us, fs = doc.solve_doc_acados(param)
+        sys.stdout = old_stdout
         
         q_sol = xs[:, :model.nq]
         dq_sol = xs[:, model.nq:]
-        
         return q_sol, dq_sol, True
     except Exception as e:
+        sys.stdout = old_stdout
         return None, None, False
 
 # --- 4. DIFFUSION UTILS ---
@@ -199,16 +204,13 @@ def sample_diffusion(model, condition_trajectory, n_samples, scaler_w):
         for i in reversed(range(TIMESTEPS)):
             t = torch.full((n_samples,), i, device=DEVICE, dtype=torch.long)
             predicted_noise = model(w_current, t, cond_repeated, trajectory_mask=mask)
-            
             alpha_t = alpha[i]; alpha_hat_t = alpha_hat[i]; beta_t = beta[i]
             noise = torch.randn_like(w_current) if i > 0 else torch.zeros_like(w_current)
-            
             w_current = (1 / torch.sqrt(alpha_t)) * (w_current - ((1 - alpha_t) / torch.sqrt(1 - alpha_hat_t)) * predicted_noise) + torch.sqrt(beta_t) * noise
 
     w_pred_numpy = w_current.cpu().numpy()
     w_pred_unscaled = scaler_w.inverse_transform(w_pred_numpy)
     w_pred_unscaled = np.clip(w_pred_unscaled, 1e-6, 1.0)
-    
     return w_pred_unscaled
 
 def calculate_rmse(y_true, y_pred):
@@ -218,15 +220,6 @@ def calculate_rmse(y_true, y_pred):
 
 # --- MAIN SCRIPT ---
 def main():
-    # ADDED
-    # ind_train_traj = 5
-    # with open("data/dataset_unifie.pkl", 'rb') as f:
-    #     train_data = pickle.load(f)
-    # train_weights = train_data["w_matrices"]
-    # one_set_train_weight = train_weights[ind_train_traj].T
-    # print(f"Taille des poids w train: {one_set_train_weight.shape}")
-
-
     print("--- Setting up Robot & Environment ---")
     model, param_template = setup_robot_and_param()
     
@@ -242,40 +235,14 @@ def main():
     ).to(DEVICE)
     diffusion_model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
 
-    # --- Generate Ground Truth ---
-    print("--- Generating Ground Truth Trajectory (Acados) ---")
+    # --- LOAD GROUND TRUTH ---
+    print(f"--- Loading Train Sample Index {SAMPLE_IDX} ---")
+    q_true, dq_true, W_true, params = load_training_sample(DATASET_PATH, SAMPLE_IDX)
     
-    W_true = sample_W_dirichlet_mixture(n_phases=N_PHASES, n_costs=N_COSTS)
-    print(f"Taille des poids w: {W_true.shape}")
-    # W_true = one_set_train_weight
+    q_init_rad = params['q_init']
+    x_fin = params['x_fin']
     
-    q_init_deg = np.array([90.0, 90.0])
-    noise_deg = np.random.normal(0, 5, size=2) 
-    
-    # q_init_rad = np.deg2rad(q_init_deg + noise_deg)
-
-    # ADDED
-    # size_q = np.deg2rad(train_data["q_trajs"][ind_train_traj]).shape
-    # print(f"Shape q_init: {size_q}")
-    # q_init_rad = np.deg2rad(train_data["q_trajs"][ind_train_traj][0,:])
-    
-    x_fin = 0.5 + np.random.normal(0, 0.05)
-
-    # ADDED
-    # q_fin_rad = np.deg2rad(train_data["q_trajs"][ind_train_traj][-1,:])
-    # x_fin = 
-    
-    nb_samples = 150 
-    
-    print(f"Target X: {x_fin:.3f}, q_init (deg): {np.rad2deg(q_init_rad)}")
-    
-    q_true, dq_true, success = solve_ocp_interface(
-        W_true, model, param_template, q_init_rad, x_fin, nb_samples
-    )
-    
-    if not success:
-        print("Failed to generate Ground Truth. Exiting.")
-        return
+    print(f"Sample Params -> Target X: {x_fin:.3f}, q_init (deg): {np.rad2deg(q_init_rad)}")
 
     total_len = q_true.shape[0]
     idx_p1 = int(total_len / 3)
@@ -287,20 +254,18 @@ def main():
     fig = plt.figure(figsize=(16, 12))
     gs_main = fig.add_gridspec(2, 1, height_ratios=[1.2, 1], hspace=0.4)
     
-    # Top: Trajectories (2x2)
+    # Trajectories
     gs_top = gs_main[0].subgridspec(2, 2, wspace=0.25, hspace=0.3)
     ax_q1 = fig.add_subplot(gs_top[0, 0])
     ax_q2 = fig.add_subplot(gs_top[0, 1])
     ax_dq1 = fig.add_subplot(gs_top[1, 0])
     ax_dq2 = fig.add_subplot(gs_top[1, 1])
-    
     traj_axes = [ax_q1, ax_q2, ax_dq1, ax_dq2]
     traj_titles = ["Joint Position q1", "Joint Position q2", "Joint Velocity dq1", "Joint Velocity dq2"]
     traj_units = ["[rad]", "[rad]", "[rad/s]", "[rad/s]"]
 
-    # Bottom: Weights Distribution (Rows: Phases, Cols: Costs)
+    # Weights
     gs_weights = gs_main[1].subgridspec(N_PHASES, N_COSTS + 1, width_ratios=[0.2] + [1]*N_COSTS, wspace=0.3, hspace=0.5)
-    
     axes_weights = []
     axes_progress = []
     phase_names = ["Phase 1\n(Start)", "Phase 2\n(Mid)", "Phase 3\n(End)"]
@@ -310,63 +275,78 @@ def main():
         row_axes = [fig.add_subplot(gs_weights[r, c+1]) for c in range(N_COSTS)]
         axes_weights.append(row_axes)
 
+    # STORAGE
     last_reconstructed_q = np.zeros_like(q_true)
     last_reconstructed_dq = np.zeros_like(dq_true)
-    
-    rmse_history = {"q": [], "dq": []}
+    last_ensemble_qs = []  
+    last_ensemble_dqs = [] 
 
     def update(frame):
+        # --- CORRECTION : Déclaration nonlocal AU DÉBUT ---
+        nonlocal last_reconstructed_q, last_reconstructed_dq
+        nonlocal last_ensemble_qs, last_ensemble_dqs
+        
         current_len = frame + 10 
         if current_len > total_len: current_len = total_len
         
-        print(f"Generating samples for given condition {current_len}/{total_len}...", end="\r", flush=True)
+        # Info progression
+        n_solved = len(last_ensemble_qs)
+        print(f"Frame {current_len}/{total_len} | Ensemble: {n_solved}/{N_SAMPLES_DIFFUSION} solved...", end="\r", flush=True)
         
         # 1. Diffusion Inference
         q_partial = q_true[:current_len]
         dq_partial = dq_true[:current_len]
         combined = np.concatenate([q_partial, dq_partial], axis=1) 
-        
         combined_scaled = scaler_traj.transform(combined)
         traj_tensor = torch.FloatTensor(combined_scaled).transpose(0, 1).unsqueeze(0).to(DEVICE)
         
         w_pred_samples_flat = sample_diffusion(diffusion_model, traj_tensor, N_SAMPLES_DIFFUSION, scaler_w)
         w_pred_samples = w_pred_samples_flat.reshape(N_SAMPLES_DIFFUSION, N_PHASES, N_COSTS)
-        
-        # Normalize
         sums = w_pred_samples.sum(axis=2, keepdims=True) 
         sums[sums == 0] = 1.0 
         w_pred_samples_norm = w_pred_samples / sums 
-        
-        # Mean
         w_pred_mean = w_pred_samples_norm.mean(axis=0) 
         
         # 2. Reconstruction
-        nonlocal last_reconstructed_q, last_reconstructed_dq
-        
         if frame % RECONSTRUCTION_STEP == 0 or current_len == total_len:
+            # A. MOYENNE
             rec_q, rec_dq, ok = solve_ocp_interface(
                 w_pred_mean, model, param_template, q_init_rad, x_fin, nb_samples=total_len - 1
             )
             if ok:
                 limit = min(rec_q.shape[0], total_len)
-                
-                new_q = np.zeros_like(q_true)
-                new_dq = np.zeros_like(dq_true)
-                
-                new_q[:limit] = rec_q[:limit]
-                new_dq[:limit] = rec_dq[:limit]
-                
+                new_q = np.zeros_like(q_true); new_dq = np.zeros_like(dq_true)
+                new_q[:limit] = rec_q[:limit]; new_dq[:limit] = rec_dq[:limit]
                 last_reconstructed_q = new_q
                 last_reconstructed_dq = new_dq
+            
+            # B. ENSEMBLE (Nuage)
+            temp_ensemble_qs = []
+            temp_ensemble_dqs = []
+            
+            for idx_w in range(N_SAMPLES_DIFFUSION):
+                w_sample = w_pred_samples_norm[idx_w]
+                s_q, s_dq, s_ok = solve_ocp_interface(
+                    w_sample, model, param_template, q_init_rad, x_fin, nb_samples=total_len - 1
+                )
+                if s_ok:
+                    lim_s = min(s_q.shape[0], total_len)
+                    ens_q = np.zeros_like(q_true); ens_dq = np.zeros_like(dq_true)
+                    ens_q[:lim_s] = s_q[:lim_s]; ens_dq[:lim_s] = s_dq[:lim_s]
+                    temp_ensemble_qs.append(ens_q)
+                    temp_ensemble_dqs.append(ens_dq)
+            
+            last_ensemble_qs = temp_ensemble_qs
+            last_ensemble_dqs = temp_ensemble_dqs
 
-        # 3. Calculate RMSE
+        # 3. RMSE
         rmse_q = calculate_rmse(q_true, last_reconstructed_q)
         rmse_dq = calculate_rmse(dq_true, last_reconstructed_dq)
 
         # --- PLOTTING ---
         time_steps = np.arange(total_len)
         
-        datas = [
+        datas_mean = [
             (q_true[:,0], last_reconstructed_q[:,0]),
             (q_true[:,1], last_reconstructed_q[:,1]),
             (dq_true[:,0], last_reconstructed_dq[:,0]),
@@ -375,19 +355,38 @@ def main():
         
         for i, ax in enumerate(traj_axes):
             ax.clear()
-            true_d, pred_d = datas[i]
+            true_d, pred_mean_d = datas_mean[i]
             
-            if pred_d.shape[0] > len(time_steps):
-                pred_d = pred_d[:len(time_steps)]
-            
+            # Background regions
             ax.axvline(x=idx_p1, color='gray', linestyle='--', linewidth=0.8)
             ax.axvline(x=idx_p2, color='gray', linestyle='--', linewidth=0.8)
             ax.axvspan(0, current_len, color='green', alpha=0.05)
+            
+            # --- 1. PLOT ENSEMBLE (Fond) ---
+            # On vérifie si on a des données à plotter
+            if len(last_ensemble_qs) == 0 and frame % RECONSTRUCTION_STEP == 0:
+                # Debug info (optionnel, n'imprime rien si ça marche)
+                pass 
 
-            ax.plot(time_steps, true_d, 'k--', alpha=0.6, label='Ground Truth')
+            for j in range(len(last_ensemble_qs)):
+                if i == 0: ens_d = last_ensemble_qs[j][:, 0]
+                elif i == 1: ens_d = last_ensemble_qs[j][:, 1]
+                elif i == 2: ens_d = last_ensemble_dqs[j][:, 0]
+                elif i == 3: ens_d = last_ensemble_dqs[j][:, 1]
+                
+                len_plot = min(len(time_steps), len(ens_d))
+                t_plot = time_steps[:len_plot]
+                d_plot = ens_d[:len_plot]
+                
+                if np.any(d_plot):
+                    # --- CHANGE: Alpha plus fort (0.4) et ligne plus épaisse ---
+                    ax.plot(t_plot, d_plot, color='red', linewidth=1.5, alpha=0.4)
+
+            # --- 2. PLOT TRUTH & MEAN ---
+            ax.plot(time_steps, true_d, 'k--', alpha=0.6, label='Train Data (Truth)')
             
             if np.any(last_reconstructed_q):
-                ax.plot(time_steps, pred_d, 'r-', linewidth=1.5, alpha=0.9, label='Reconstruction')
+                ax.plot(time_steps, pred_mean_d, 'r-', linewidth=2.0, alpha=1.0, label='Mean Pred')
             
             ax.set_title(traj_titles[i])
             ax.set_ylabel(traj_units[i])
@@ -396,8 +395,6 @@ def main():
             if i == 0:
                 ax.legend(loc='upper right', fontsize='x-small')
                 ax.text(0.02, 0.95, f"RMSE Q: {rmse_q:.4f}", transform=ax.transAxes, color='red', fontsize=9, fontweight='bold')
-            if i == 2:
-                 ax.text(0.02, 0.95, f"RMSE DQ: {rmse_dq:.4f}", transform=ax.transAxes, color='red', fontsize=9, fontweight='bold')
 
         # --- WEIGHTS PLOTTING ---
         prog = [
@@ -424,15 +421,10 @@ def main():
                 val_true = W_true[r, c] / row_sum_true
                 val_preds = w_pred_samples_norm[:, r, c]
                 
-                # --- MODIFICATION PRINCIPALE ICI ---
-                # density=False pour avoir le compte exact
-                ax.hist(val_preds, bins=np.linspace(0, 1, 15), color='orange', alpha=0.6, density=False)
-                
-                # Axe Y visible et borné à N_SAMPLES_DIFFUSION
+                ax.hist(val_preds, bins=np.linspace(0, 1, 15), color='blue', alpha=0.6, density=False)
                 ax.set_ylim(0, N_SAMPLES_DIFFUSION)
                 ax.tick_params(axis='y', labelsize=6)
-                
-                ax.axvline(x=val_true, color='black', linestyle='--', linewidth=2, label='True')
+                ax.axvline(x=val_true, color='black', linestyle='--', linewidth=2, label='Train Val')
                 ax.set_xlim(0, 1.0)
                 
                 if r == 0: ax.set_title(COST_ORDER[c], fontsize=8, rotation=10)
@@ -441,17 +433,22 @@ def main():
     frames = range(0, total_len - 5, 2) 
     anim = FuncAnimation(fig, update, frames=frames, interval=200)
     
-    save_path = "test_dirichlet_acados_reconstruction.mp4"
-    print(f"--- Saving Animation to {save_path} ---")
+    save_path = f"test_train_sample_{SAMPLE_IDX}_ensemble.gif"
+    print(f"--- Saving Animation to {save_path} (GIF ONLY) ---")
+    
+    # --- COMMENTED OUT MP4 ---
+    # try:
+    #     anim.save(save_path.replace(".gif", ".mp4"), writer='ffmpeg', fps=10, extra_args=['-vcodec', 'libx264'])
+    #     print("Done (MP4).")
+    # except Exception as e:
+    #     print(f"MP4 failed: {e}")
+
     try:
-        anim.save(save_path, writer='ffmpeg', fps=10, extra_args=['-vcodec', 'libx264'])
-        print() 
-        print("Done.")
-    except Exception as e:
-        print(f"FFMpeg failed ({e}), trying GIF...")
-        anim.save("test_dirichlet_acados_reconstruction.gif", writer='pillow', fps=10)
+        anim.save(save_path, writer='pillow', fps=10)
         print()
         print("Done (GIF).")
+    except Exception as e:
+        print(f"GIF failed: {e}")
 
 if __name__ == "__main__":
     main()

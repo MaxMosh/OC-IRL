@@ -64,7 +64,7 @@
 #define HUMAN_TURBO_DOC_NY0    11
 #define HUMAN_TURBO_DOC_NY     11
 #define HUMAN_TURBO_DOC_NYN    1
-#define HUMAN_TURBO_DOC_N      60
+#define HUMAN_TURBO_DOC_N      115
 #define HUMAN_TURBO_DOC_NH     0
 #define HUMAN_TURBO_DOC_NHN    2
 #define HUMAN_TURBO_DOC_NH0    2

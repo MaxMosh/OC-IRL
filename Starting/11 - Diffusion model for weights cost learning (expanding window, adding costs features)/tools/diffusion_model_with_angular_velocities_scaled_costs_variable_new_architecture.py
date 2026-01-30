@@ -74,7 +74,8 @@ class TransformerDenoiser(nn.Module):
     Treats the weights matrix (5, 3) as a sequence of length 3.
     """
     # def __init__(self, w_features=5, w_phases=3, d_model=128, nhead=4, num_layers=4, dropout=0.1):
-    def __init__(self, w_features=4, w_phases=3, d_model=128, nhead=4, num_layers=4, dropout=0.1):
+    # def __init__(self, w_features=4, w_phases=3, d_model=128, nhead=4, num_layers=4, dropout=0.1):
+    def __init__(self, w_features=4, w_phases=1, d_model=128, nhead=4, num_layers=4, dropout=0.1):
         super().__init__()
         self.w_features = w_features
         self.w_phases = w_phases
